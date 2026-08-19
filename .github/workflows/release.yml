@@ -25,7 +25,7 @@ jobs:
         run: |
           $tag = if ('${{ github.event_name }}' -eq 'workflow_dispatch') { '${{ inputs.tag }}' } else { '${{ github.ref_name }}' }
           if ($tag -notmatch '^v\d+\.\d+\.\d+$') { throw 'Release tag must be vMAJOR.MINOR.PATCH' }
-          git fetch --force origin "refs/tags/$tag:refs/tags/$tag"
+          git fetch --force origin "refs/tags/${tag}:refs/tags/${tag}"
           git rev-parse --verify "refs/tags/$tag"
           "RELEASE_TAG=$tag" >> $env:GITHUB_ENV
           $version = $tag.TrimStart('v')
