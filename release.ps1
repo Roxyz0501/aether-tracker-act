@@ -3,8 +3,10 @@ param(
     [switch]$SkipBuild
 )
 $ErrorActionPreference = 'Stop'
-if (-not $SkipBuild) { & powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\build.ps1 }
-if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+if (-not $SkipBuild) {
+    & powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\build.ps1
+    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+}
 
 $dll = Resolve-Path 'dist\CharacterTracker.dll'
 $actual = [Diagnostics.FileVersionInfo]::GetVersionInfo($dll).FileVersion
