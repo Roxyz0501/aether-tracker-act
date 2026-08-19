@@ -1,0 +1,53 @@
+<Project ToolsVersion="Current" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" Condition="false" />
+  <PropertyGroup>
+    <Configuration Condition=" '$(Configuration)' == '' ">Debug</Configuration>
+    <Platform Condition=" '$(Platform)' == '' ">AnyCPU</Platform>
+    <ProjectGuid>{7A6A3FC5-A044-4A02-8CC2-9026789CB6CA}</ProjectGuid>
+    <OutputType>Library</OutputType>
+    <RootNamespace>CharacterTracker</RootNamespace>
+    <AssemblyName>CharacterTracker</AssemblyName>
+    <Authors>Roxyz0501</Authors>
+    <Company>Roxyz0501</Company>
+    <Copyright>Copyright © Roxyz0501 2026</Copyright>
+    <TargetFrameworkVersion>v4.8</TargetFrameworkVersion>
+    <FileAlignment>512</FileAlignment>
+    <AutoGenerateBindingRedirects>true</AutoGenerateBindingRedirects>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <OutputPath>..\..\dist\</OutputPath>
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|AnyCPU' ">
+    <DebugSymbols>true</DebugSymbols><DebugType>full</DebugType><Optimize>false</Optimize><DefineConstants>DEBUG;TRACE</DefineConstants>
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Release|AnyCPU' ">
+    <DebugType>pdbonly</DebugType><Optimize>true</Optimize><DefineConstants>TRACE</DefineConstants>
+  </PropertyGroup>
+  <ItemGroup>
+    <Reference Include="Advanced Combat Tracker">
+      <HintPath Condition="'$(ACTPath)' != ''">$(ACTPath)\Advanced Combat Tracker.exe</HintPath>
+      <HintPath Condition="'$(ACTPath)' == ''">C:\Program Files (x86)\Advanced Combat Tracker\Advanced Combat Tracker.exe</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="System" /><Reference Include="System.Core" /><Reference Include="System.Drawing" />
+    <Reference Include="System.Windows.Forms" /><Reference Include="System.Xml" />
+    <Reference Include="System.Net.Http" /><Reference Include="System.Runtime.Serialization" /><Reference Include="System.IO.Compression" /><Reference Include="System.IO.Compression.FileSystem" />
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Include="Properties\AssemblyInfo.cs" />
+    <Compile Include="Localization.cs" />
+    <Compile Include="UpdateCore.cs" />
+    <Compile Include="UpdateService.cs" />
+    <Compile Include="Core.cs" />
+    <Compile Include="OverlayTheme.cs" />
+    <Compile Include="OverlayWindowBase.cs" />
+    <Compile Include="ActorListOverlayForm.cs" />
+    <Compile Include="MapData.cs" />
+    <Compile Include="MapOverlayForm.cs" />
+    <Compile Include="FfxivAdapter.cs" />
+    <Compile Include="OverlayForm.cs" />
+    <Compile Include="PluginControl.cs" />
+    <Compile Include="PositionTrackerPlugin.cs" />
+    <Compile Include="Settings.cs" />
+  </ItemGroup>
+  <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
+</Project>

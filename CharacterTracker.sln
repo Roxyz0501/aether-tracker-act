@@ -1,0 +1,31 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.31903.59
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CharacterTracker", "src\CharacterTracker\CharacterTracker.csproj", "{7A6A3FC5-A044-4A02-8CC2-9026789CB6CA}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CharacterTracker.Tests", "tests\CharacterTracker.Tests\CharacterTracker.Tests.csproj", "{894B5A79-68D6-43A3-A9CE-CED0CBAF9698}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CharacterTracker.Updater", "src\CharacterTracker.Updater\CharacterTracker.Updater.csproj", "{98E24C54-07E3-49E3-B192-0B80CBA6BC52}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{7A6A3FC5-A044-4A02-8CC2-9026789CB6CA}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{7A6A3FC5-A044-4A02-8CC2-9026789CB6CA}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{7A6A3FC5-A044-4A02-8CC2-9026789CB6CA}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{7A6A3FC5-A044-4A02-8CC2-9026789CB6CA}.Release|Any CPU.Build.0 = Release|Any CPU
+		{894B5A79-68D6-43A3-A9CE-CED0CBAF9698}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{894B5A79-68D6-43A3-A9CE-CED0CBAF9698}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{894B5A79-68D6-43A3-A9CE-CED0CBAF9698}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{894B5A79-68D6-43A3-A9CE-CED0CBAF9698}.Release|Any CPU.Build.0 = Release|Any CPU
+		{98E24C54-07E3-49E3-B192-0B80CBA6BC52}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{98E24C54-07E3-49E3-B192-0B80CBA6BC52}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{98E24C54-07E3-49E3-B192-0B80CBA6BC52}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{98E24C54-07E3-49E3-B192-0B80CBA6BC52}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+EndGlobal

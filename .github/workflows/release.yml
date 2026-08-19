@@ -1,0 +1,37 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: microsoft/setup-msbuild@6fb02220983dee41ce7ae257b6f4d8f9bf5ed4ce # v2.0.0
+      - name: Validate tag
+        shell: powershell
+        run: |
+          $version = '${{ github.ref_name }}'.TrimStart('v')
+          if ($version -notmatch '^\d+\.\d+\.\d+$') { throw 'Release tag must be vMAJOR.MINOR.PATCH' }
+          "RELEASE_VERSION=$version" >> $env:GITHUB_ENV
+      - name: Build ACT API stub
+        shell: powershell
+        run: msbuild ci\ActStub\ActStub.csproj /t:Rebuild /p:Configuration=Release /p:Platform=AnyCPU
+      - name: Build and test
+        shell: powershell
+        run: .\build.ps1 -Configuration Release -ActPath "$PWD\ci\ActStub\bin\Release"
+      - name: Create signed assets
+        shell: powershell
+        run: .\release.ps1 -Version $env:RELEASE_VERSION -SkipBuild
+      - name: Publish stable GitHub Release
+        shell: powershell
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${{ github.ref_name }}" "dist/Aether-Tracker-ACT-v$env:RELEASE_VERSION.zip" "dist/Aether-Tracker-ACT-v$env:RELEASE_VERSION.sha256" --verify-tag --generate-notes --title "Aether Tracker v$env:RELEASE_VERSION"

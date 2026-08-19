@@ -1,0 +1,13 @@
+.vs/
+**/bin/
+**/obj/
+dist/
+*.user
+*.suo
+*.cache
+*.log
+*.tmp
+CharacterTracker.config.xml
+.env
+.env.*
+!.env.example
