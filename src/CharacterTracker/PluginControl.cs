@@ -112,8 +112,8 @@ namespace CharacterTracker
             tabs.TabPages.Add(BuildTrackingTab());
             tabs.TabPages.Add(BuildMapTab());
             supportPage = BuildSupportTab();
-            tabs.TabPages.Add(supportPage);
             tabs.TabPages.Add(BuildUpdateTab());
+            tabs.TabPages.Add(supportPage);
             tabs.DrawItem += DrawTab;
             tabs.MouseMove += TabMouseMove;
             tabs.MouseLeave += delegate { hoveredTabIndex = -1; tabs.Invalidate(); };
@@ -246,8 +246,8 @@ namespace CharacterTracker
             var layout = BaseLayout(7);
 
             var title = LocLabel("support.title");
-            title.Font = new Font("Yu Gothic UI Semibold", 15f, FontStyle.Bold);
-            title.ForeColor = Color.FromArgb(153, 82, 15);
+            title.Font = new Font("Yu Gothic UI Semibold", 17f, FontStyle.Bold);
+            title.ForeColor = Color.FromArgb(166, 83, 15);
             AddWide(layout, title, 0);
 
             var description = LocExplanation("support.description");
@@ -259,19 +259,19 @@ namespace CharacterTracker
                 Text = Localization.T("support.button"),
                 Tag = "loc:support.button",
                 AutoSize = false,
-                Width = 330,
+                Width = 360,
                 Height = 50,
                 Anchor = AnchorStyles.Left,
                 FlatStyle = FlatStyle.Flat,
-                BackColor = Color.FromArgb(180, 99, 24),
+                BackColor = Color.FromArgb(202, 101, 20),
                 ForeColor = Color.White,
                 Font = new Font("Yu Gothic UI Semibold", 11f, FontStyle.Bold),
                 Cursor = Cursors.Hand
             };
-            supportButton.FlatAppearance.BorderColor = Color.FromArgb(143, 73, 11);
+            supportButton.FlatAppearance.BorderColor = Color.FromArgb(164, 79, 12);
             supportButton.FlatAppearance.BorderSize = 1;
-            supportButton.FlatAppearance.MouseOverBackColor = Color.FromArgb(202, 119, 37);
-            supportButton.FlatAppearance.MouseDownBackColor = Color.FromArgb(145, 75, 14);
+            supportButton.FlatAppearance.MouseOverBackColor = Color.FromArgb(224, 126, 31);
+            supportButton.FlatAppearance.MouseDownBackColor = Color.FromArgb(174, 83, 13);
             supportButton.Click += OpenSupportLink;
             AddWide(layout, supportButton, 2);
 
@@ -350,20 +350,19 @@ namespace CharacterTracker
             Color background;
             Color foreground;
 
+            background = selected ? Color.White : Color.FromArgb(240, 242, 245);
+            foreground = Color.FromArgb(42, 53, 69);
             if (support) {
-                background = selected ? Color.FromArgb(177, 94, 20) : hovered ? Color.FromArgb(247, 213, 161) : Color.FromArgb(255, 239, 213);
-                foreground = selected ? Color.White : Color.FromArgb(137, 69, 8);
-            } else {
-                background = selected ? Color.White : hovered ? Color.FromArgb(235, 239, 245) : Color.FromArgb(226, 232, 240);
-                foreground = selected ? Color.FromArgb(37, 50, 69) : Color.FromArgb(73, 86, 105);
-            }
+                background = selected ? Color.FromArgb(255, 245, 226) : hovered ? Color.FromArgb(255, 238, 207) : Color.FromArgb(250, 231, 197);
+                foreground = selected ? Color.FromArgb(137, 62, 7) : hovered ? Color.FromArgb(157, 72, 8) : Color.FromArgb(174, 84, 13);
+            } else if (hovered && !selected) background = Color.FromArgb(247, 248, 250);
 
             using (var brush = new SolidBrush(background)) e.Graphics.FillRectangle(brush, e.Bounds);
             TextRenderer.DrawText(e.Graphics, tabs.TabPages[e.Index].Text, tabs.Font, e.Bounds, foreground,
                 TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.SingleLine);
             if (support && selected) {
-                using (var pen = new Pen(Color.FromArgb(232, 172, 76), 2f))
-                    e.Graphics.DrawLine(pen, e.Bounds.Left + 5, e.Bounds.Bottom - 2, e.Bounds.Right - 5, e.Bounds.Bottom - 2);
+                using (var pen = new Pen(Color.FromArgb(213, 137, 32), 2f))
+                    e.Graphics.DrawLine(pen, e.Bounds.Left + 4, e.Bounds.Bottom - 2, e.Bounds.Right - 4, e.Bounds.Bottom - 2);
             }
         }
 
