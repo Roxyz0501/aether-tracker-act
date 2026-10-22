@@ -1,5 +1,4 @@
 using System;
-using System.Diagnostics;
 using System.IO;
 using System.IO.Compression;
 using System.Linq;
@@ -62,7 +61,7 @@ namespace CharacterTracker
             }
         }
 
-        public async Task<UpdateResult> PrepareAndLaunchAsync(UpdateResult available, CancellationToken cancellationToken)
+        public async Task<UpdateResult> PreparePackageAsync(UpdateResult available, CancellationToken cancellationToken)
         {
             if (available == null || available.State != UpdateState.Available || available.Release == null) return new UpdateResult { State = UpdateState.Failed, Error = "No validated release is selected." };
             try {
@@ -75,28 +74,35 @@ namespace CharacterTracker
                 Uri zipUri = ValidateAssetUri(zipAsset.DownloadUrl);
                 Uri hashUri = ValidateAssetUri(hashAsset.DownloadUrl);
                 string folder = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "AetherTracker", "Updates", version.ToString());
+                cancellationToken.ThrowIfCancellationRequested();
                 Directory.CreateDirectory(folder);
                 string zipPath = Path.Combine(folder, baseName + ".zip");
-                File.WriteAllBytes(zipPath, await DownloadWithRedirectsAsync(zipUri, cancellationToken, false).ConfigureAwait(false));
+                byte[] package = await DownloadWithRedirectsAsync(zipUri, cancellationToken, false).ConfigureAwait(false);
+                cancellationToken.ThrowIfCancellationRequested();
+                WriteDownloadedPackage(zipPath, package);
+                cancellationToken.ThrowIfCancellationRequested();
                 string manifest = System.Text.Encoding.UTF8.GetString(await DownloadWithRedirectsAsync(hashUri, cancellationToken, false).ConfigureAwait(false));
+                cancellationToken.ThrowIfCancellationRequested();
                 if (!UpdateValidation.VerifySha256(zipPath, manifest, Path.GetFileName(zipPath))) throw new InvalidDataException("SHA-256 verification failed.");
                 UpdateValidation.ValidatePackage(zipPath, version);
-                string pendingDll = Path.Combine(folder, "CharacterTracker.dll");
-                UpdateValidation.ExtractPendingDll(zipPath, pendingDll);
-
-                string currentDll = Assembly.GetExecutingAssembly().Location;
-                string updater = Path.Combine(Path.GetDirectoryName(currentDll), "CharacterTracker.Updater.exe");
-                if (!File.Exists(updater)) throw new FileNotFoundException("CharacterTracker.Updater.exe is not installed next to the plugin DLL.");
-                var start = new ProcessStartInfo(updater) {
-                    UseShellExecute = false,
-                    CreateNoWindow = true,
-                    WindowStyle = ProcessWindowStyle.Hidden,
-                    Arguments = Quote(pendingDll) + " " + Quote(currentDll) + " " + Process.GetCurrentProcess().Id
-                };
-                Process.Start(start);
                 return new UpdateResult { State = UpdateState.Ready, CurrentVersion = available.CurrentVersion, LatestVersion = available.LatestVersion, Notes = available.Notes };
             } catch (Exception ex) {
                 return new UpdateResult { State = UpdateState.Failed, CurrentVersion = available.CurrentVersion, LatestVersion = available.LatestVersion, Error = FriendlyError(ex) };
+            }
+        }
+
+        private static void WriteDownloadedPackage(string destination, byte[] bytes)
+        {
+            string temporary = destination + ".tmp." + Guid.NewGuid().ToString("N");
+            try {
+                using (var stream = new FileStream(temporary, FileMode.CreateNew, FileAccess.Write, FileShare.None)) {
+                    stream.Write(bytes, 0, bytes.Length);
+                    stream.Flush(true);
+                }
+                if (File.Exists(destination)) File.Replace(temporary, destination, null);
+                else File.Move(temporary, destination);
+            } finally {
+                try { if (File.Exists(temporary)) File.Delete(temporary); } catch { }
             }
         }
 
@@ -149,7 +155,6 @@ namespace CharacterTracker
             return ex.Message;
         }
 
-        private static string Quote(string value) { return "\"" + value.Replace("\"", "") + "\""; }
         public void Dispose() { client.Dispose(); }
     }
 }

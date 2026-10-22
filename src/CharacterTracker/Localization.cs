@@ -7,6 +7,7 @@ namespace CharacterTracker
     public static class Localization
     {
         private static readonly Dictionary<string, Dictionary<string, string>> Resources = BuildResources();
+        private static readonly Dictionary<string, Dictionary<string, string>> RuntimeOverrides = BuildRuntimeOverrides();
         private static string language = "en";
 
         public static string Language { get { return language; } }
@@ -42,12 +43,43 @@ namespace CharacterTracker
         {
             Dictionary<string, string> selected;
             string value;
+            if (RuntimeOverrides.TryGetValue(language, out selected) && selected.TryGetValue(key, out value)) return value;
             if (Resources.TryGetValue(language, out selected) && selected.TryGetValue(key, out value)) return value;
             if (Resources["en"].TryGetValue(key, out value)) return value;
             return key;
         }
 
         public static string F(string key, params object[] args) { return string.Format(CultureInfo.CurrentCulture, T(key), args); }
+
+        private static Dictionary<string, Dictionary<string, string>> BuildRuntimeOverrides()
+        {
+            return new Dictionary<string, Dictionary<string, string>> {
+                { "en", new Dictionary<string, string> {
+                    { "update.ready", "Package verified and saved under %LOCALAPPDATA%\\AetherTracker\\Updates. Close ACT, replace CharacterTracker.dll from the ZIP, then restart ACT." },
+                    { "update.safety", "Updates only download after you click Update. No helper process runs after ACT closes." },
+                    { "update.downloading", "Downloading and validating the update package…" },
+                    { "settings.saveFailed", "Settings could not be saved. Your changes remain in memory until ACT exits: {0}" }
+                } },
+                { "ja", new Dictionary<string, string> {
+                    { "update.ready", "更新パッケージを検証し、%LOCALAPPDATA%\\AetherTracker\\Updatesへ保存しました。ACTを終了し、ZIP内のCharacterTracker.dllを手動で置き換えてからACTを再起動してください。" },
+                    { "update.safety", "更新ボタンを押した場合だけダウンロードします。ACT終了後も補助プロセスは起動しません。" },
+                    { "update.downloading", "更新パッケージをダウンロードして検証中…" },
+                    { "settings.saveFailed", "設定を保存できませんでした。変更はACT終了までメモリに保持されます: {0}" }
+                } },
+                { "zh-Hans", new Dictionary<string, string> {
+                    { "update.ready", "更新包已验证并保存至%LOCALAPPDATA%\\AetherTracker\\Updates。请关闭ACT，从ZIP中手动替换CharacterTracker.dll，然后重新启动ACT。" },
+                    { "update.safety", "仅在点击更新后下载。ACT关闭后不会启动辅助进程。" },
+                    { "update.downloading", "正在下载并验证更新包…" },
+                    { "settings.saveFailed", "无法保存设置。更改会保留在内存中，直到ACT退出：{0}" }
+                } },
+                { "ko", new Dictionary<string, string> {
+                    { "update.ready", "업데이트 패키지를 검증하여 %LOCALAPPDATA%\\AetherTracker\\Updates에 저장했습니다. ACT를 종료한 뒤 ZIP의 CharacterTracker.dll을 직접 교체하고 ACT를 다시 시작하세요." },
+                    { "update.safety", "업데이트를 클릭했을 때만 다운로드합니다. ACT 종료 후 보조 프로세스는 실행하지 않습니다." },
+                    { "update.downloading", "업데이트 패키지를 다운로드하고 검증 중…" },
+                    { "settings.saveFailed", "설정을 저장하지 못했습니다. 변경 사항은 ACT가 종료될 때까지 메모리에 유지됩니다: {0}" }
+                } }
+            };
+        }
 
         private static Dictionary<string, Dictionary<string, string>> BuildResources()
         {

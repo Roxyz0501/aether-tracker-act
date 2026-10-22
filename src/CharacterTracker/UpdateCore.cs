@@ -105,19 +105,18 @@ namespace CharacterTracker
             if (string.IsNullOrWhiteSpace(name) || Path.IsPathRooted(name)) return false;
             string normalized = name.Replace('\\', '/');
             if (normalized.StartsWith("/", StringComparison.Ordinal) || normalized.Contains("../") || normalized.Contains(":")) return false;
-            return normalized == "CharacterTracker.dll" || normalized == "CharacterTracker.Updater.exe" || normalized == "README.md" || normalized == "UI_COMMON_SPEC.md";
+            return normalized == "CharacterTracker.dll" || normalized == "README.md" || normalized == "UI_COMMON_SPEC.md";
         }
 
         public static void ValidatePackage(string zipPath, SemanticVersion expectedVersion)
         {
-            bool dll = false, updater = false;
+            bool dll = false;
             using (var archive = ZipFile.OpenRead(zipPath)) {
                 foreach (var entry in archive.Entries) {
                     if (!IsSafeEntry(entry.FullName)) throw new InvalidDataException("Unexpected or unsafe package entry: " + entry.FullName);
                     if (entry.FullName == "CharacterTracker.dll") dll = true;
-                    if (entry.FullName == "CharacterTracker.Updater.exe") updater = true;
                 }
-                if (!dll || !updater) throw new InvalidDataException("The package does not contain the expected plugin and updater.");
+                if (!dll) throw new InvalidDataException("The package does not contain the expected plugin DLL.");
             }
             string temp = Path.Combine(Path.GetTempPath(), "AetherTracker-verify-" + Guid.NewGuid().ToString("N") + ".dll");
             try {
@@ -133,12 +132,5 @@ namespace CharacterTracker
             } finally { try { if (File.Exists(temp)) File.Delete(temp); } catch { } }
         }
 
-        public static void ExtractPendingDll(string zipPath, string destination)
-        {
-            Directory.CreateDirectory(Path.GetDirectoryName(destination));
-            using (var archive = ZipFile.OpenRead(zipPath))
-            using (var input = archive.GetEntry("CharacterTracker.dll").Open())
-            using (var output = File.Create(destination)) input.CopyTo(output);
-        }
     }
 }

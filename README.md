@@ -20,7 +20,7 @@ Configに言語がない初回起動だけWindows UI言語を確認し、`ja`系
 
 「更新」タブには「起動時に更新を確認」と「今すぐ確認」があります。確認は非同期で行い、失敗しても通常機能を継続します。更新が見つかった場合はACT下部のプラグインステータスと更新タブへ現在版、最新版、更新内容を表示します。ダウンロードは利用者が「更新する」を押した場合だけ開始します。
 
-更新パッケージとSHA-256マニフェストを検証し、プラグイン名・バージョン・収録ファイルを確認してから `%LOCALAPPDATA%\AetherTracker\Updates` へ保留します。ロード中のDLLは上書きしません。補助アップデータがACT終了を待ち、現行DLLを `CharacterTracker.dll.backup` に保存してから置換します。置換失敗時はバックアップを復元し、結果を `%LOCALAPPDATA%\AetherTracker\Updater.log` へ記録します。
+更新パッケージとSHA-256マニフェストを検証し、プラグイン名・バージョン・収録ファイルを確認してから `%LOCALAPPDATA%\AetherTracker\Updates` へ保存します。ACT終了後に補助プロセスは起動しません。ダウンロード完了後はACTを終了し、検証済みZIP内の `CharacterTracker.dll` をプラグイン配置先へ手動で置き換えてください。
 
 ### 更新元
 
@@ -47,7 +47,7 @@ Configに言語がない初回起動だけWindows UI言語を確認し、`ja`系
 ## インストール
 
 1. ACT、`FFXIV_ACT_Plugin.dll` を有効にします。
-2. `CharacterTracker.dll` と `CharacterTracker.Updater.exe` を同じフォルダへ配置します。
+2. `CharacterTracker.dll` をプラグイン用フォルダへ配置します。
 3. `CharacterTracker.dll` を、ACT の `Plugins > Plugin Listing > Browse...` から追加します。
 4. Windowsのファイルプロパティに「ブロックの解除」が表示される場合は、追加前に解除します。
 5. 一覧オーバーレイの対象行をダブルクリックします。
@@ -76,6 +76,8 @@ ACTの座標はワールド座標（yalms）です。一方、ゲーム内マッ
 
 設定・校正値は `%APPDATA%\Advanced Combat Tracker\Config\CharacterTracker.config.xml` に保存されます。
 
+設定変更は即時にメモリへ反映されます。60秒ごとに最後の保存成功状態との差を確認し、変更がある場合だけ保存します。正常終了・プラグイン無効化時には最新値を最終保存し、完了を待ちます。強制終了や電源断では最後の保存後の変更が失われる場合があります。
+
 `Language`、`CheckUpdatesOnStartup`、`LastUpdateCheckUtc`、`SkippedVersion` は追加設定です。旧Configに存在しなくても安全な既定値を使うため、従来の表示・校正・位置設定はそのまま読み込めます。
 
 ## ビルド
@@ -101,14 +103,14 @@ ACTが標準以外の場所にある場合:
 3. 次のコマンドでRelease用ZIPとSHA-256マニフェストを生成します。
 
 ```powershell
-.\release.ps1 -Version 1.6.0
+.\release.ps1 -Version <AssemblyInfo.csと同じSemVer>
 ```
 
-4. GitHubでタグ `v1.6.0` の通常Releaseを作成します。draft／prereleaseでは公開しません。
-5. `Aether-Tracker-ACT-v1.6.0.zip` と `Aether-Tracker-ACT-v1.6.0.sha256` を両方添付します。ファイル名は変更しません。
+4. 同じ名前のGitHubタグがないことを確認して `vX.Y.Z` タグを作り、通常Releaseを公開します。draft／prereleaseでは公開しません。
+5. 生成された `Aether-Tracker-ACT-vX.Y.Z.zip` と `Aether-Tracker-ACT-vX.Y.Z.sha256` を両方添付します。ファイル名は変更しません。
 6. Release notesへ利用者向け変更点を記載します。プラグインは先頭1200文字を更新タブへ表示します。
 
-更新通信はHTTPSの `api.github.com`、`github.com`、GitHub管理下の `*.githubusercontent.com` だけを許可します。GitHubトークンはプラグインへ埋め込みません。ZIP内は `CharacterTracker.dll`、`CharacterTracker.Updater.exe`、README、共通UI仕様書だけを許可し、絶対パス、`..`、別プラグイン、想定外ファイルを拒否します。
+更新通信はHTTPSの `api.github.com`、`github.com`、GitHub管理下の `*.githubusercontent.com` だけを許可します。GitHubトークンはプラグインへ埋め込みません。ZIP内は `CharacterTracker.dll`、README、共通UI仕様書だけを許可し、絶対パス、`..`、別プラグイン、想定外ファイルを拒否します。ACT終了後に動作するアップデータは使用しません。
 
 ## 注意
 
