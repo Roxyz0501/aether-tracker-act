@@ -6,6 +6,8 @@ using System.Runtime.Serialization;
 using System.Runtime.Serialization.Json;
 using System.Security.Cryptography;
 using System.Text;
+using System.Threading;
+using System.Threading.Tasks;
 
 namespace CharacterTracker
 {
@@ -62,6 +64,52 @@ namespace CharacterTracker
 
     public static class UpdateValidation
     {
+        public const int MaximumReleaseZipBytes = 64 * 1024 * 1024;
+        public const int MaximumPluginDllBytes = 32 * 1024 * 1024;
+        public const int MaximumManifestBytes = 16 * 1024;
+        public const int MaximumApiResponseBytes = 1024 * 1024;
+        public const int MaximumPackageEntries = 8;
+        public const long MaximumPackageExpandedBytes = 64L * 1024 * 1024;
+
+        public static async Task<byte[]> ReadBoundedAsync(Stream input, int maximumBytes, CancellationToken cancellationToken)
+        {
+            if (input == null) throw new ArgumentNullException("input");
+            using (var output = new MemoryStream()) {
+                await CopyBoundedAsync(input, output, maximumBytes, cancellationToken).ConfigureAwait(false);
+                return output.ToArray();
+            }
+        }
+
+        public static async Task<long> CopyBoundedAsync(Stream input, Stream output, long maximumBytes, CancellationToken cancellationToken)
+        {
+            if (input == null || output == null) throw new ArgumentNullException();
+            byte[] buffer = new byte[64 * 1024];
+            long total = 0;
+            while (true) {
+                cancellationToken.ThrowIfCancellationRequested();
+                int read = await input.ReadAsync(buffer, 0, buffer.Length, cancellationToken).ConfigureAwait(false);
+                if (read == 0) return total;
+                if (read > maximumBytes - total) throw new InvalidDataException("The response exceeds its allowed size.");
+                await output.WriteAsync(buffer, 0, read, cancellationToken).ConfigureAwait(false);
+                total += read;
+            }
+        }
+
+        public static long CopyBounded(Stream input, Stream output, long maximumBytes, CancellationToken cancellationToken)
+        {
+            if (input == null || output == null) throw new ArgumentNullException();
+            byte[] buffer = new byte[64 * 1024];
+            long total = 0;
+            while (true) {
+                cancellationToken.ThrowIfCancellationRequested();
+                int read = input.Read(buffer, 0, buffer.Length);
+                if (read == 0) return total;
+                if (read > maximumBytes - total) throw new InvalidDataException("The package entry exceeds its allowed size.");
+                output.Write(buffer, 0, read);
+                total += read;
+            }
+        }
+
         public static GitHubRelease ParseRelease(string json)
         {
             if (string.IsNullOrWhiteSpace(json)) throw new InvalidDataException("Empty GitHub response.");
@@ -108,12 +156,22 @@ namespace CharacterTracker
             return normalized == "CharacterTracker.dll" || normalized == "README.md" || normalized == "UI_COMMON_SPEC.md";
         }
 
-        public static void ValidatePackage(string zipPath, SemanticVersion expectedVersion)
+        public static void ValidatePackage(string zipPath, SemanticVersion expectedVersion, CancellationToken cancellationToken = default(CancellationToken))
         {
+            cancellationToken.ThrowIfCancellationRequested();
+            var zipInfo = new FileInfo(zipPath);
+            if (!zipInfo.Exists || zipInfo.Length <= 0 || zipInfo.Length > MaximumReleaseZipBytes)
+                throw new InvalidDataException("The release ZIP is missing or exceeds the allowed size.");
             bool dll = false;
             using (var archive = ZipFile.OpenRead(zipPath)) {
+                if (archive.Entries.Count > MaximumPackageEntries) throw new InvalidDataException("The package contains too many entries.");
+                long expandedBytes = 0;
                 foreach (var entry in archive.Entries) {
+                    cancellationToken.ThrowIfCancellationRequested();
                     if (!IsSafeEntry(entry.FullName)) throw new InvalidDataException("Unexpected or unsafe package entry: " + entry.FullName);
+                    if (entry.Length < 0 || entry.Length > MaximumPackageExpandedBytes - expandedBytes)
+                        throw new InvalidDataException("The package expands beyond the allowed size.");
+                    expandedBytes += entry.Length;
                     if (entry.FullName == "CharacterTracker.dll") dll = true;
                 }
                 if (!dll) throw new InvalidDataException("The package does not contain the expected plugin DLL.");
@@ -122,7 +180,9 @@ namespace CharacterTracker
             try {
                 using (var archive = ZipFile.OpenRead(zipPath))
                 using (var input = archive.GetEntry("CharacterTracker.dll").Open())
-                using (var output = File.Create(temp)) input.CopyTo(output);
+                using (var output = new FileStream(temp, FileMode.CreateNew, FileAccess.Write, FileShare.None))
+                    CopyBounded(input, output, MaximumPluginDllBytes, cancellationToken);
+                cancellationToken.ThrowIfCancellationRequested();
                 var info = System.Diagnostics.FileVersionInfo.GetVersionInfo(temp);
                 SemanticVersion actual;
                 string fileVersion = info.FileVersion;

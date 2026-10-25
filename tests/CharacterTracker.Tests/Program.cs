@@ -1,10 +1,12 @@
 using System;
 using System.Drawing;
+using System.Drawing.Imaging;
 using System.Globalization;
 using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Collections.Generic;
+using System.IO.Compression;
 
 namespace CharacterTracker.Tests
 {
@@ -80,9 +82,69 @@ namespace CharacterTracker.Tests
             True(!UpdateValidation.IsSafeEntry("C:\\CharacterTracker.dll"), "absolute path rejected");
             True(!UpdateValidation.IsSafeEntry("OtherPlugin.dll"), "unexpected plugin rejected");
             True(!UpdateValidation.IsSafeEntry("CharacterTracker.Updater.exe"), "helper updater rejected");
+            Throws(() => UpdateValidation.ReadBoundedAsync(new MemoryStream(new byte[11]), 10, CancellationToken.None).GetAwaiter().GetResult(), "bounded response rejects oversized body");
+            using (var canceled = new CancellationTokenSource()) {
+                canceled.Cancel(); Throws(() => UpdateValidation.ReadBoundedAsync(new MemoryStream(new byte[1]), 10, canceled.Token).GetAwaiter().GetResult(), "bounded response honors cancellation");
+            }
+            TestPackageLimits();
+            TrackerRuntimeMetrics.Reset();
+            int visibleTicks = 60, hiddenTicks = 60;
+            for (int i = 0; i < visibleTicks; i++) if (TrackerRefreshPolicy.ShouldAcquireActors(true, false, false, false)) TrackerRuntimeMetrics.ActorRead();
+            for (int i = 0; i < hiddenTicks; i++) if (TrackerRefreshPolicy.ShouldAcquireActors(false, false, false, false)) TrackerRuntimeMetrics.ActorRead();
+            Equal(60, (int)TrackerRuntimeMetrics.ActorReadCount, "visible/invisible actor read simulation (60/0)");
+            Equal(100, TrackerRefreshPolicy.PollInterval(true, true, false, false, 100, 500), "visible arrow poll rate");
+            Equal(1000, TrackerRefreshPolicy.PollInterval(false, false, false, false, 100, 500), "all hidden poll rate");
+            var renderGate = new OverlayRenderGate();
+            True(renderGate.Update("same"), "first overlay state requests render");
+            True(!renderGate.Update("same"), "unchanged overlay state suppresses render");
+            True(renderGate.Update("changed"), "changed overlay state requests render");
             TestSettingsPersistence();
+            TestSettingsRecovery();
             TestMapShutdown();
+            TestMapCacheReuse();
             if (failures == 0) Console.WriteLine("All tests passed."); return failures == 0 ? 0 : 1;
+        }
+
+        private static void TestPackageLimits()
+        {
+            string path = Path.Combine(Path.GetTempPath(), "AT-zip-" + Guid.NewGuid().ToString("N") + ".zip");
+            SemanticVersion expected;
+            SemanticVersion.TryParse("1.6.2", out expected);
+            try {
+                using (var archive = ZipFile.Open(path, ZipArchiveMode.Create)) {
+                    var entry = archive.CreateEntry("CharacterTracker.dll", CompressionLevel.Optimal);
+                    using (var output = entry.Open()) {
+                        byte[] zeros = new byte[64 * 1024];
+                        for (int i = 0; i < 1025; i++) output.Write(zeros, 0, zeros.Length);
+                    }
+                }
+                Throws(() => UpdateValidation.ValidatePackage(path, expected), "ZIP expanded-size limit rejects package bomb");
+            } finally { try { File.Delete(path); } catch { } }
+            try {
+                using (var archive = ZipFile.Open(path, ZipArchiveMode.Create)) {
+                    using (var writer = new StreamWriter(archive.CreateEntry("../escape.txt").Open())) writer.Write("unsafe");
+                }
+                Throws(() => UpdateValidation.ValidatePackage(path, expected), "package validator rejects Zip Slip path");
+            } finally { try { File.Delete(path); } catch { } }
+        }
+
+        private static void TestSettingsRecovery()
+        {
+            string directory = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "AetherTracker-recovery-test-" + Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(directory);
+            string path = Path.Combine(directory, "settings.xml");
+            try {
+                var saved = NewSettingsObject(path); saved.OpacityPercent = 73;
+                File.WriteAllBytes(path + ".bak.1", saved.SerializeSnapshot());
+                File.WriteAllText(path, "<broken");
+                var recovered = TrackerSettings.Load(path, new CultureInfo("en-US"));
+                Equal(73, recovered.OpacityPercent, "valid settings backup recovery");
+                True(File.Exists(path) && File.ReadAllText(path) == "<broken", "recovery leaves damaged primary intact");
+                var atomic = new AtomicSettingsFileStore();
+                byte[] next = recovered.SerializeSnapshot(); atomic.WriteAtomically(path, next);
+                True(BytesEqual(next, File.ReadAllBytes(path)), "atomic settings replacement writes complete primary");
+                True(Directory.GetFiles(directory, "settings.xml.bak.*").Length >= 1, "atomic settings replacement keeps recovery backup");
+            } finally { try { Directory.Delete(directory, true); } catch { } }
         }
 
         private static void TestSettingsPersistence()
@@ -180,6 +242,51 @@ namespace CharacterTracker.Tests
             try { if (Directory.Exists(directory)) Directory.Delete(directory, true); } catch { }
         }
 
+        private static void TestMapCacheReuse()
+        {
+            string directory = Path.GetFullPath(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "..", "..", "..", "..", "AT-" + Guid.NewGuid().ToString("N")));
+            try {
+                Directory.CreateDirectory(directory);
+                string fakeHash = new string('A', 64);
+                for (int id = 1; id <= 66; id++) {
+                    File.WriteAllText(Path.Combine(directory, "map-" + id + ".cache"), "fixture");
+                    File.WriteAllBytes(Path.Combine(directory, "map-" + id + "-" + fakeHash + ".png"), new byte[] { 1 });
+                }
+                File.WriteAllText(Path.Combine(directory, "map-0.cache"), "stale");
+                File.WriteAllBytes(Path.Combine(directory, "map-0-" + fakeHash + ".png"), new byte[] { 1 });
+                File.SetLastWriteTimeUtc(Path.Combine(directory, "map-0.cache"), DateTime.UtcNow.AddDays(-200));
+                File.SetLastWriteTimeUtc(Path.Combine(directory, "map-0-" + fakeHash + ".png"), DateTime.UtcNow.AddDays(-200));
+                for (int id = 1; id <= 513; id++) File.WriteAllText(Path.Combine(directory, "territory-" + id + ".txt"), "1");
+                var source = new StaticMapSource(CreatePng());
+                using (var service = new MapImageService(directory, source, new AtomicMapCacheStore())) {
+                    MapData loaded = null;
+                    service.BeginLoad(9876, (data, error) => { loaded = data; if (error != null) throw new Exception(error); }).GetAwaiter().GetResult();
+                    True(loaded != null && loaded.Image.Width == 4, "map downloaded and dimension-validated");
+                    True(service.CacheWriteCount > 0, "bounded map cache files written");
+                    if (loaded != null) loaded.Dispose();
+                    Equal(1, source.ImageRequests, "first map load downloads image once");
+                    Equal(64, Directory.GetFiles(directory, "map-*.cache").Length, "map cache count is pruned to limit");
+                    Equal(512, Directory.GetFiles(directory, "territory-*.txt").Length, "territory mapping count is pruned to limit");
+                    True(!File.Exists(Path.Combine(directory, "map-0.cache")), "map cache TTL removes entries older than 180 days");
+                    True(service.CacheWriteBytes > 0 && service.CacheWriteCount == 2, "logical cache writes counted (image plus manifest)");
+                }
+                var cacheOnly = new StaticMapSource(null);
+                using (var service = new MapImageService(directory, cacheOnly, new AtomicMapCacheStore())) {
+                    MapData loaded = null;
+                    service.BeginLoad(9876, (data, error) => { loaded = data; if (error != null) throw new Exception(error); }).GetAwaiter().GetResult();
+                    True(loaded != null && loaded.Image.Width == 4, "map cache reused");
+                    if (loaded != null) loaded.Dispose();
+                    Equal(0, cacheOnly.ImageRequests, "cached map causes zero network image downloads");
+                }
+                True(Directory.GetFiles(directory, "map-*.cache").Length == 64, "bounded schema manifest written");
+            } finally { try { if (Directory.Exists(directory)) Directory.Delete(directory, true); } catch { } }
+        }
+
+        private static byte[] CreatePng()
+        {
+            using (var bitmap = new Bitmap(4, 4)) using (var stream = new MemoryStream()) { bitmap.Save(stream, ImageFormat.Png); return stream.ToArray(); }
+        }
+
         private static bool BytesEqual(byte[] a, byte[] b)
         {
             if (a == null || b == null || a.Length != b.Length) return false;
@@ -232,6 +339,17 @@ namespace CharacterTracker.Tests
                 token.Register(() => completion.TrySetCanceled());
                 return completion.Task;
             }
+        }
+
+        private sealed class StaticMapSource : IMapDataSource
+        {
+            private readonly byte[] image;
+            public int ImageRequests;
+            public StaticMapSource(byte[] value) { image = value; }
+            public Task<string> DownloadStringAsync(string url, CancellationToken token)
+            { return Task.FromResult("{\"Id\":\"fixture-asset\",\"SizeFactor\":100,\"OffsetX\":0,\"OffsetY\":0}"); }
+            public Task<byte[]> DownloadBytesAsync(string url, CancellationToken token)
+            { Interlocked.Increment(ref ImageRequests); if (image == null) throw new IOException("Unexpected network image request with cache present."); return Task.FromResult((byte[])image.Clone()); }
         }
     }
 }

@@ -10,6 +10,7 @@ namespace CharacterTracker
         private ActorSnapshot player, target;
         private bool facingUp, lost;
         private readonly TrackerSettings settings;
+        private readonly OverlayRenderGate renderGate = new OverlayRenderGate();
 
         public OverlayForm(TrackerSettings value) : base(value.OverlayLocked)
         {
@@ -35,9 +36,14 @@ namespace CharacterTracker
 
         public void SetTracking(ActorSnapshot localPlayer, ActorSnapshot tracked, bool playerFacingUp, bool isLost)
         {
+            string state = TrackingState(localPlayer) + "|" + TrackingState(tracked) + "|" + playerFacingUp + "|" + isLost;
+            if (!renderGate.Update(state)) return;
             player = localPlayer; target = tracked; facingUp = playerFacingUp; lost = isLost;
-            if (!IsDisposed) Invalidate();
+            if (!IsDisposed) RequestRedraw();
         }
+
+        private static string TrackingState(ActorSnapshot actor)
+        { return actor == null ? "-" : actor.Id + ":" + actor.Name + ":" + actor.X.ToString("R", System.Globalization.CultureInfo.InvariantCulture) + ":" + actor.Y.ToString("R", System.Globalization.CultureInfo.InvariantCulture) + ":" + actor.Heading.ToString("R", System.Globalization.CultureInfo.InvariantCulture); }
 
         protected override void OnPaint(PaintEventArgs e)
         {

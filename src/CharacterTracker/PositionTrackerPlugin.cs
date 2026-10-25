@@ -164,15 +164,19 @@ namespace CharacterTracker
         {
             if (stopping) return;
             pluginStatus.Text = Localization.T("plugin.started");
-            if (overlay != null) overlay.Invalidate();
-            if (listOverlay != null) listOverlay.Invalidate();
-            if (mapOverlay != null) mapOverlay.Invalidate();
+            if (overlay != null) overlay.RefreshVisuals();
+            if (listOverlay != null) listOverlay.RefreshVisuals();
+            if (mapOverlay != null) mapOverlay.RefreshVisuals();
             RefreshList();
         }
 
         private void Poll()
         {
             if (stopping || adapter == null) return;
+            ApplyVisibility();
+            if (!TrackerRefreshPolicy.ShouldAcquireActors(control != null && control.Visible,
+                overlay != null && overlay.Visible, listOverlay != null && listOverlay.Visible, mapOverlay != null && mapOverlay.Visible)) return;
+            TrackerRuntimeMetrics.ActorRead();
             actors = adapter.ReadActors(out playerId, out territoryId);
             if (control != null && control.MapOverlayEnabled && territoryId != 0 && territoryId != requestedTerritoryId) {
                 requestedTerritoryId = territoryId;
@@ -206,10 +210,9 @@ namespace CharacterTracker
         private void RefreshList()
         {
             if (stopping || control == null || adapter == null) return;
-            control.UpdateStatus(actors, playerId, territoryId, adapter.LastError);
-            if (listOverlay != null && !listOverlay.IsDisposed) listOverlay.SetActors(actors, playerId, territoryId, trackedId);
-            if (mapOverlay != null && !mapOverlay.IsDisposed) mapOverlay.SetActors(actors, playerId, trackedId);
-            ApplyVisibility();
+            if (control.Visible) control.UpdateStatus(actors, playerId, territoryId, adapter.LastError);
+            if (listOverlay != null && listOverlay.Visible) listOverlay.SetActors(actors, playerId, territoryId, trackedId);
+            if (mapOverlay != null && mapOverlay.Visible) mapOverlay.SetActors(actors, playerId, trackedId);
         }
 
         private void OnLogLineRead(bool isImport, LogLineEventArgs logInfo)
@@ -282,17 +285,15 @@ namespace CharacterTracker
             overlay.SetOpacityPercent(settings.OpacityPercent);
             listOverlay.SetOpacityPercent(settings.OpacityPercent);
             mapOverlay.SetOpacityPercent(settings.OpacityPercent);
-            overlay.Invalidate(); listOverlay.Invalidate(); mapOverlay.Invalidate();
-            int desiredPoll = control.ArrowOverlayEnabled && trackedId != 0
-                ? Math.Max(100, settings.PollIntervalMs)
-                : ((control.ListOverlayEnabled || control.MapOverlayEnabled) ? Math.Max(500, settings.ListRefreshMs) : 1000);
-            if (pollTimer != null && pollTimer.Interval != desiredPoll) pollTimer.Interval = desiredPoll;
             bool active = overlay.IsGameOrSelfForeground || listOverlay.IsGameOrSelfForeground || mapOverlay.IsGameOrSelfForeground;
             bool activityAllowed = !control.HideWhenInactive || active;
             bool showArrow = control.ArrowOverlayEnabled && trackedId != 0 && overlay.HasGameWindow && activityAllowed;
             bool showList = control.ListOverlayEnabled && listOverlay.HasGameWindow && activityAllowed;
             bool showMap = control.MapOverlayEnabled && mapOverlay.HasGameWindow && activityAllowed;
             SetVisible(overlay, showArrow); SetVisible(listOverlay, showList); SetVisible(mapOverlay, showMap);
+            int desiredPoll = TrackerRefreshPolicy.PollInterval(overlay.Visible, trackedId != 0, listOverlay.Visible || control.Visible,
+                mapOverlay.Visible, settings.PollIntervalMs, settings.ListRefreshMs);
+            if (pollTimer != null && pollTimer.Interval != desiredPoll) pollTimer.Interval = desiredPoll;
         }
 
         private static void SetVisible(Form form, bool visible)

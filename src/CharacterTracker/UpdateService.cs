@@ -47,7 +47,7 @@ namespace CharacterTracker
             if (!UpdateConfiguration.IsConfigured) return new UpdateResult { State = UpdateState.Unconfigured, CurrentVersion = currentText };
             try {
                 string api = "https://api.github.com/repos/" + Uri.EscapeDataString(UpdateConfiguration.GitHubOwner) + "/" + Uri.EscapeDataString(UpdateConfiguration.GitHubRepository) + "/releases/latest";
-                byte[] bytes = await DownloadWithRedirectsAsync(new Uri(api), cancellationToken, true).ConfigureAwait(false);
+                byte[] bytes = await DownloadWithRedirectsAsync(new Uri(api), cancellationToken, true, UpdateValidation.MaximumApiResponseBytes).ConfigureAwait(false);
                 var release = UpdateValidation.ParseRelease(System.Text.Encoding.UTF8.GetString(bytes));
                 if (release.Draft || release.Prerelease) throw new InvalidDataException("GitHub returned a draft or prerelease as latest stable release.");
                 SemanticVersion current, latest;
@@ -77,41 +77,48 @@ namespace CharacterTracker
                 cancellationToken.ThrowIfCancellationRequested();
                 Directory.CreateDirectory(folder);
                 string zipPath = Path.Combine(folder, baseName + ".zip");
-                byte[] package = await DownloadWithRedirectsAsync(zipUri, cancellationToken, false).ConfigureAwait(false);
+                byte[] package = await DownloadWithRedirectsAsync(zipUri, cancellationToken, false, UpdateValidation.MaximumReleaseZipBytes).ConfigureAwait(false);
                 cancellationToken.ThrowIfCancellationRequested();
-                WriteDownloadedPackage(zipPath, package);
+                await WriteDownloadedPackageAsync(zipPath, package, cancellationToken).ConfigureAwait(false);
                 cancellationToken.ThrowIfCancellationRequested();
-                string manifest = System.Text.Encoding.UTF8.GetString(await DownloadWithRedirectsAsync(hashUri, cancellationToken, false).ConfigureAwait(false));
+                string manifest = System.Text.Encoding.UTF8.GetString(await DownloadWithRedirectsAsync(hashUri, cancellationToken, false, UpdateValidation.MaximumManifestBytes).ConfigureAwait(false));
                 cancellationToken.ThrowIfCancellationRequested();
                 if (!UpdateValidation.VerifySha256(zipPath, manifest, Path.GetFileName(zipPath))) throw new InvalidDataException("SHA-256 verification failed.");
-                UpdateValidation.ValidatePackage(zipPath, version);
+                UpdateValidation.ValidatePackage(zipPath, version, cancellationToken);
                 return new UpdateResult { State = UpdateState.Ready, CurrentVersion = available.CurrentVersion, LatestVersion = available.LatestVersion, Notes = available.Notes };
             } catch (Exception ex) {
                 return new UpdateResult { State = UpdateState.Failed, CurrentVersion = available.CurrentVersion, LatestVersion = available.LatestVersion, Error = FriendlyError(ex) };
             }
         }
 
-        private static void WriteDownloadedPackage(string destination, byte[] bytes)
+        private static async Task WriteDownloadedPackageAsync(string destination, byte[] bytes, CancellationToken cancellationToken)
         {
             string temporary = destination + ".tmp." + Guid.NewGuid().ToString("N");
             try {
                 using (var stream = new FileStream(temporary, FileMode.CreateNew, FileAccess.Write, FileShare.None)) {
-                    stream.Write(bytes, 0, bytes.Length);
+                    using (var input = new MemoryStream(bytes, false))
+                        await UpdateValidation.CopyBoundedAsync(input, stream, UpdateValidation.MaximumReleaseZipBytes, cancellationToken).ConfigureAwait(false);
+                    cancellationToken.ThrowIfCancellationRequested();
                     stream.Flush(true);
                 }
-                if (File.Exists(destination)) File.Replace(temporary, destination, null);
+                cancellationToken.ThrowIfCancellationRequested();
+                if (File.Exists(destination)) {
+                    string backup = destination + ".bak." + Guid.NewGuid().ToString("N");
+                    File.Replace(temporary, destination, backup);
+                    try { File.Delete(backup); } catch { }
+                }
                 else File.Move(temporary, destination);
             } finally {
                 try { if (File.Exists(temporary)) File.Delete(temporary); } catch { }
             }
         }
 
-        private async Task<byte[]> DownloadWithRedirectsAsync(Uri uri, CancellationToken token, bool apiOnly)
+        private async Task<byte[]> DownloadWithRedirectsAsync(Uri uri, CancellationToken token, bool apiOnly, int maximumBytes)
         {
             Uri current = uri;
             for (int i = 0; i < 6; i++) {
                 ValidateGitHubUri(current, apiOnly && i == 0);
-                using (var response = await client.GetAsync(current, HttpCompletionOption.ResponseContentRead, token).ConfigureAwait(false)) {
+                using (var response = await client.GetAsync(current, HttpCompletionOption.ResponseHeadersRead, token).ConfigureAwait(false)) {
                     if ((int)response.StatusCode >= 300 && (int)response.StatusCode < 400) {
                         Uri location = response.Headers.Location;
                         if (location == null) throw new InvalidDataException("GitHub redirect has no location.");
@@ -119,7 +126,11 @@ namespace CharacterTracker
                         continue;
                     }
                     response.EnsureSuccessStatusCode();
-                    return await response.Content.ReadAsByteArrayAsync().ConfigureAwait(false);
+                    long? contentLength = response.Content.Headers.ContentLength;
+                    if (contentLength.HasValue && contentLength.Value > maximumBytes)
+                        throw new InvalidDataException("The release response exceeds its allowed size.");
+                    using (var stream = await response.Content.ReadAsStreamAsync().ConfigureAwait(false))
+                        return await UpdateValidation.ReadBoundedAsync(stream, maximumBytes, token).ConfigureAwait(false);
                 }
             }
             throw new InvalidDataException("Too many GitHub redirects.");

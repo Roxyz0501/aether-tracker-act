@@ -17,6 +17,7 @@ namespace CharacterTracker
         private float zoom = 1f;
         private PointF viewCenter;
         private string status = Localization.T("map.waiting");
+        private readonly OverlayRenderGate renderGate = new OverlayRenderGate();
 
         public MapOverlayForm(TrackerSettings value) : base(value.OverlayLocked)
         {
@@ -41,6 +42,8 @@ namespace CharacterTracker
 
         public void SetMap(MapData value, string message)
         {
+            string state = (value == null ? "-" : value.MapId + ":" + value.AssetId + ":" + (value.Image == null ? "-" : value.Image.Width + "x" + value.Image.Height)) + "|" + (message ?? "");
+            if (!renderGate.Update("map|" + state)) { if (value != null && !ReferenceEquals(map, value)) value.Dispose(); return; }
             if (!ReferenceEquals(map, value) && map != null) map.Dispose();
             map = value; status = message ?? "";
             if (map != null && map.Image != null) {
@@ -48,12 +51,14 @@ namespace CharacterTracker
                 viewCenter = new PointF(map.Image.Width / 2f, map.Image.Height / 2f);
                 selectedId = 0;
             }
-            Invalidate();
+            RequestRedraw();
         }
 
         public void SetActors(IReadOnlyList<ActorSnapshot> value, uint currentPlayerId, uint currentTrackedId)
         {
-            actors = value; playerId = currentPlayerId; trackedId = currentTrackedId; Invalidate();
+            string state = "actors|" + currentPlayerId + "|" + currentTrackedId + "|" + string.Join(";", value.Select(a => a.Id + ":" + a.Name + ":" + a.X.ToString("R", System.Globalization.CultureInfo.InvariantCulture) + ":" + a.Y.ToString("R", System.Globalization.CultureInfo.InvariantCulture) + ":" + a.Type));
+            if (!renderGate.Update(state)) return;
+            actors = value; playerId = currentPlayerId; trackedId = currentTrackedId; RequestRedraw();
             if (selectedId != 0 && !actors.Any(a => a.Id == selectedId)) selectedId = 0;
         }
 

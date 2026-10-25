@@ -20,6 +20,7 @@ namespace CharacterTracker
         private MapCalibration calibration;
         private uint trackedId;
         private int scrollOffset;
+        private readonly OverlayRenderGate renderGate = new OverlayRenderGate();
 
         public event Action<uint> TrackRequested;
 
@@ -47,16 +48,18 @@ namespace CharacterTracker
 
         public void SetActors(IReadOnlyList<ActorSnapshot> snapshot, uint playerId, uint territoryId, uint currentTrackedId)
         {
-            player = snapshot.FirstOrDefault(a => a.Id == playerId);
-            calibration = settings.FindCalibration(territoryId);
-            trackedId = currentTrackedId;
+            var nextPlayer = snapshot.FirstOrDefault(a => a.Id == playerId);
+            var nextCalibration = settings.FindCalibration(territoryId);
             string query = (settings.SearchText ?? "").Trim();
-            actors = snapshot.Where(a => VisibleKind(a.Type) &&
+            var nextActors = snapshot.Where(a => VisibleKind(a.Type) &&
                     (query.Length == 0 || a.Name.IndexOf(query, StringComparison.CurrentCultureIgnoreCase) >= 0 || a.Id.ToString("X8").IndexOf(query, StringComparison.OrdinalIgnoreCase) >= 0))
-                .OrderBy(a => player == null ? double.MaxValue : TrackingMath.HorizontalDistance(player, a))
+                .OrderBy(a => nextPlayer == null ? double.MaxValue : TrackingMath.HorizontalDistance(nextPlayer, a))
                 .ToList();
+            string state = currentTrackedId + "|" + territoryId + "|" + query + "|" + (nextCalibration == null ? "-" : nextCalibration.XOffset.ToString("R", System.Globalization.CultureInfo.InvariantCulture) + ":" + nextCalibration.YOffset.ToString("R", System.Globalization.CultureInfo.InvariantCulture) + ":" + nextCalibration.XFactor.ToString("R", System.Globalization.CultureInfo.InvariantCulture) + ":" + nextCalibration.YFactor.ToString("R", System.Globalization.CultureInfo.InvariantCulture)) + "|" + (nextPlayer == null ? "-" : nextPlayer.Id + ":" + nextPlayer.X + ":" + nextPlayer.Y) + "|" + string.Join(";", nextActors.Select(a => a.Id + ":" + a.Name + ":" + a.Type + ":" + a.X.ToString("R", System.Globalization.CultureInfo.InvariantCulture) + ":" + a.Y.ToString("R", System.Globalization.CultureInfo.InvariantCulture)));
+            if (!renderGate.Update(state)) return;
+            player = nextPlayer; calibration = nextCalibration; trackedId = currentTrackedId; actors = nextActors;
             scrollOffset = Math.Max(0, Math.Min(scrollOffset, Math.Max(0, actors.Count - VisibleRows)));
-            Invalidate();
+            RequestRedraw();
         }
 
         private bool VisibleKind(int type)

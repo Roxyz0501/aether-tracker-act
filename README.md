@@ -1,5 +1,15 @@
 # Aether Tracker for ACT
 
+## 1.6.2
+
+- Hidden control/overlay states skip FFXIV actor acquisition; visible overlays request a redraw only when their displayed data changes.
+- Game-window discovery is shared across overlays and limited to one lookup per second.
+- Map downloads and cache entries now have strict response, image-dimension, count, byte, and 180-day age limits; the existing cache is reused and legacy entries remain readable.
+- Config replacement is atomic and retains recoverable backups. Invalid Config data is left intact while the newest valid backup is loaded.
+- Manual update downloads, manifests, ZIP entry counts, expanded sizes, and DLL extraction are bounded and cancellable.
+
+The included measurements are deterministic test counters/simulations, not an estimate of real SSD wear or actual in-game FPS. No production Config or map-cache data was used during tests.
+
 作者: `Roxyz0501`
 
 ライセンス: 未設定（既存ライセンスが存在しないため、現時点では再利用・再配布条件を付与していません）
@@ -42,7 +52,7 @@ Configに言語がない初回起動だけWindows UI言語を確認し、`ja`系
 - マップ上でのマウスホイールズーム、点クリック時だけの名前表示
 - プレイヤー正面基準／北基準の切替
 - FFXIVが非アクティブなとき自動非表示
-- 100msの共有スナップショットだけを利用。独自メモリ走査なし
+- 表示中だけ100ms共有スナップショットを利用し、全画面が非表示ならActor取得を停止。独自メモリ走査なし
 
 ## インストール
 

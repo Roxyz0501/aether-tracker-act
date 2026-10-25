@@ -93,24 +93,67 @@ namespace CharacterTracker
 
         internal static TrackerSettings Load(string path, CultureInfo uiCulture)
         {
-            try {
-                if (File.Exists(path)) {
-                    using (var stream = File.OpenRead(path)) {
-                        var value = (TrackerSettings)new XmlSerializer(typeof(TrackerSettings)).Deserialize(stream);
-                        value.FilePath = path;
-                        // A canonical snapshot of the successfully loaded values is the baseline.
-                        // Missing fields in older Config files therefore do not cause a rewrite.
-                        value.SetPersistedSnapshot(value.SerializeSnapshot());
-                        if (EnsureLanguage(value, uiCulture)) value.Save();
-                        return value;
-                    }
-                }
-            } catch { }
+            bool primaryExists = false;
+            byte[] primary = null;
+            try { primaryExists = File.Exists(path); if (primaryExists) primary = File.ReadAllBytes(path); } catch { }
+            TrackerSettings value;
+            if (TryDeserialize(primary, out value)) {
+                value.FilePath = path;
+                value.SetPersistedSnapshot(value.SerializeSnapshot());
+                if (EnsureLanguage(value, uiCulture)) value.Save();
+                return value;
+            }
+
+            foreach (string backupPath in FindBackups(path)) {
+                byte[] backup;
+                try { backup = File.ReadAllBytes(backupPath); } catch { continue; }
+                if (!TryDeserialize(backup, out value)) continue;
+                value.FilePath = path;
+                // Force the regular saver to restore the validated backup to the primary
+                // path. Do not rename/delete a possibly useful or corrupted source file here.
+                value.SetPersistedSnapshot(primaryExists ? primary : new byte[0]);
+                EnsureLanguage(value, uiCulture);
+                return value;
+            }
+
             var created = new TrackerSettings { FilePath = path, Language = Localization.DetectLanguage(uiCulture) };
-            byte[] initial = created.SerializeSnapshot();
-            new AtomicSettingsFileStore().WriteAtomically(path, initial);
-            created.SetPersistedSnapshot(initial);
+            byte[] snapshot = created.SerializeSnapshot();
+            if (!primaryExists) {
+                new AtomicSettingsFileStore().WriteAtomically(path, snapshot);
+                created.SetPersistedSnapshot(snapshot);
+            } else {
+                // Keep an unreadable primary intact until a later atomic save can preserve
+                // it as a recovery backup.
+                created.SetPersistedSnapshot(primary ?? new byte[0]);
+            }
             return created;
+        }
+
+        private static bool TryDeserialize(byte[] contents, out TrackerSettings value)
+        {
+            value = null;
+            if (contents == null || contents.Length == 0 || contents.Length > 4 * 1024 * 1024) return false;
+            try {
+                using (var stream = new MemoryStream(contents, false))
+                    value = (TrackerSettings)new XmlSerializer(typeof(TrackerSettings)).Deserialize(stream);
+                return value != null;
+            } catch { value = null; return false; }
+        }
+
+        private static List<string> FindBackups(string path)
+        {
+            var result = new List<string>();
+            string directory = Path.GetDirectoryName(path);
+            if (string.IsNullOrEmpty(directory) || !Directory.Exists(directory)) return result;
+            var candidates = new List<FileInfo>();
+            try {
+                string fixedBackup = path + ".bak";
+                if (File.Exists(fixedBackup)) candidates.Add(new FileInfo(fixedBackup));
+                candidates.AddRange(new DirectoryInfo(directory).GetFiles(Path.GetFileName(path) + ".bak.*"));
+            } catch { return result; }
+            candidates.Sort((a, b) => b.LastWriteTimeUtc.CompareTo(a.LastWriteTimeUtc));
+            foreach (var candidate in candidates) result.Add(candidate.FullName);
+            return result;
         }
 
         public static bool EnsureLanguage(TrackerSettings value, CultureInfo uiCulture)
@@ -163,36 +206,38 @@ namespace CharacterTracker
 
     internal sealed class AtomicSettingsFileStore : ISettingsFileStore
     {
+        private const int MaximumBackupFiles = 2;
+
         public void WriteAtomically(string path, byte[] contents)
         {
             if (string.IsNullOrWhiteSpace(path)) return;
             string directory = Path.GetDirectoryName(path);
-            Directory.CreateDirectory(directory);
+            if (!string.IsNullOrEmpty(directory)) Directory.CreateDirectory(directory);
             string temporary = path + ".tmp." + Guid.NewGuid().ToString("N");
             try {
                 using (var stream = new FileStream(temporary, FileMode.CreateNew, FileAccess.Write, FileShare.None)) {
                     stream.Write(contents, 0, contents.Length);
                     stream.Flush(true);
                 }
-                if (File.Exists(path)) ReplaceWithMove(temporary, path);
-                else {
-                    try { File.Move(temporary, path); }
-                    catch (UnauthorizedAccessException) when (File.Exists(path)) { ReplaceWithMove(temporary, path); }
-                }
+                if (File.Exists(path)) {
+                    string backup = path + ".bak." + DateTime.UtcNow.Ticks.ToString(CultureInfo.InvariantCulture) + "." + Guid.NewGuid().ToString("N");
+                    // Same-volume File.Replace atomically switches the primary file and
+                    // preserves its previous complete contents under a unique backup name.
+                    File.Replace(temporary, path, backup);
+                    TrimBackups(path);
+                } else File.Move(temporary, path);
             } finally {
                 try { if (File.Exists(temporary)) File.Delete(temporary); } catch { }
             }
         }
 
-        internal static void ReplaceWithMove(string temporary, string path)
+        private static void TrimBackups(string path)
         {
-            string backup = path + ".bak." + Guid.NewGuid().ToString("N");
-            File.Move(path, backup);
-            try { File.Move(temporary, path); try { File.Delete(backup); } catch { } }
-            catch {
-                if (!File.Exists(path) && File.Exists(backup)) File.Move(backup, path);
-                throw;
-            }
+            string directory = Path.GetDirectoryName(path);
+            if (string.IsNullOrEmpty(directory) || !Directory.Exists(directory)) return;
+            FileInfo[] backups = new DirectoryInfo(directory).GetFiles(Path.GetFileName(path) + ".bak.*");
+            Array.Sort(backups, (a, b) => b.LastWriteTimeUtc.CompareTo(a.LastWriteTimeUtc));
+            for (int i = MaximumBackupFiles; i < backups.Length; i++) try { backups[i].Delete(); } catch { }
         }
     }
 

@@ -38,6 +38,7 @@
     <Compile Include="UpdateCore.cs" />
     <Compile Include="UpdateService.cs" />
     <Compile Include="Core.cs" />
+    <Compile Include="RuntimeMetrics.cs" />
     <Compile Include="OverlayTheme.cs" />
     <Compile Include="OverlayWindowBase.cs" />
     <Compile Include="ActorListOverlayForm.cs" />

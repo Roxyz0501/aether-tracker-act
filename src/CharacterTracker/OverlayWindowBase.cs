@@ -16,6 +16,10 @@ namespace CharacterTracker
         private Point dragStartScreen;
         private Point dragStartLocation;
         private IntPtr gameWindow;
+        private bool visualDirty = true;
+        private static readonly object gameWindowGate = new object();
+        private static IntPtr cachedGameWindow;
+        private static long lastGameWindowLookup;
         protected bool IsOverlayLocked { get { return overlayLocked; } }
 
         protected OverlayWindowBase(bool locked)
@@ -65,8 +69,33 @@ namespace CharacterTracker
 
         public void SetOpacityPercent(int percent)
         {
-            Opacity = Math.Max(.35, Math.Min(1.0, percent / 100.0));
+            double value = Math.Max(.35, Math.Min(1.0, percent / 100.0));
+            if (Math.Abs(Opacity - value) < .001) return;
+            Opacity = value;
+            RequestRedraw();
+        }
+
+        protected void RequestRedraw()
+        {
+            visualDirty = true;
+            if (!Visible || !IsHandleCreated) return;
+            visualDirty = false;
+            TrackerRuntimeMetrics.RedrawRequested();
             Invalidate();
+        }
+
+        public void RefreshVisuals() { RequestRedraw(); }
+
+        protected override void OnVisibleChanged(EventArgs e)
+        {
+            base.OnVisibleChanged(e);
+            if (Visible && visualDirty) RequestRedraw();
+        }
+
+        protected override void OnPaint(PaintEventArgs e)
+        {
+            TrackerRuntimeMetrics.Painted();
+            base.OnPaint(e);
         }
 
         public void RestoreSavedBounds(Size defaultSize)
@@ -183,11 +212,18 @@ namespace CharacterTracker
 
         private static IntPtr FindGameWindow()
         {
-            foreach (string name in new[] { "ffxiv_dx11", "ffxiv" })
-                foreach (var process in Process.GetProcessesByName(name))
-                    try { if (process.MainWindowHandle != IntPtr.Zero) return process.MainWindowHandle; }
-                    finally { process.Dispose(); }
-            return IntPtr.Zero;
+            lock (gameWindowGate) {
+                long now = Stopwatch.GetTimestamp();
+                if (lastGameWindowLookup != 0 && (now - lastGameWindowLookup) * 1000 / Stopwatch.Frequency < 1000) return cachedGameWindow;
+                lastGameWindowLookup = now;
+                IntPtr found = IntPtr.Zero;
+                foreach (string name in new[] { "ffxiv_dx11", "ffxiv" })
+                    foreach (var process in Process.GetProcessesByName(name))
+                        try { if (found == IntPtr.Zero && process.MainWindowHandle != IntPtr.Zero) found = process.MainWindowHandle; }
+                        finally { process.Dispose(); }
+                cachedGameWindow = found;
+                return found;
+            }
         }
 
         [StructLayout(LayoutKind.Sequential)] private struct RECT { public int Left, Top, Right, Bottom; }
