@@ -177,6 +177,19 @@ namespace CharacterTracker
             return statusCode == 429 || statusCode == 403 || string.Equals(remainingHeader, "0", StringComparison.Ordinal);
         }
 
+        public static Uri BuildOfficialReleaseAssetUri(string owner, string repository, string tag, string assetName)
+        {
+            SemanticVersion version;
+            if (!string.Equals(owner, "Roxyz0501", StringComparison.Ordinal) || !string.Equals(repository, "aether-tracker-act", StringComparison.Ordinal) || !SemanticVersion.TryParse(tag, out version))
+                throw new InvalidDataException("Release owner, repository, or tag is invalid.");
+            string package = "Aether-Tracker-ACT-v" + version + ".zip";
+            if (!string.Equals(assetName, package, StringComparison.Ordinal) && !string.Equals(assetName, Path.GetFileNameWithoutExtension(package) + ".sha256", StringComparison.Ordinal))
+                throw new InvalidDataException("Release asset name is not allowlisted.");
+            var uri = new Uri("https://github.com/" + owner + "/" + repository + "/releases/download/" + Uri.EscapeDataString(tag) + "/" + Uri.EscapeDataString(assetName));
+            if (uri.Scheme != Uri.UriSchemeHttps || uri.Host != "github.com") throw new InvalidDataException("Release asset host is invalid.");
+            return uri;
+        }
+
         public static string NormalizeRegisteredPath(string value)
         {
             if (string.IsNullOrWhiteSpace(value)) throw new InvalidDataException("ACT did not provide a plugin path.");

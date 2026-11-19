@@ -62,11 +62,10 @@ namespace CharacterTracker
                 try { release = await FetchReleaseByTagAsync(latestTag, cancellationToken).ConfigureAwait(false); }
                 catch (GitHubRateLimitException) {
                     rateLimited = true;
-                    string baseUrl = "https://github.com/" + UpdateConfiguration.GitHubOwner + "/" + UpdateConfiguration.GitHubRepository + "/releases/download/" + Uri.EscapeDataString(latestTag) + "/";
                     string package = "Aether-Tracker-ACT-v" + latest + ".zip";
-                    release = new GitHubRelease { TagName = "v" + latest, Draft = false, Prerelease = false, Body = "", Assets = new System.Collections.Generic.List<GitHubAsset> {
-                        new GitHubAsset { Name = package, DownloadUrl = baseUrl + Uri.EscapeDataString(package) },
-                        new GitHubAsset { Name = Path.GetFileNameWithoutExtension(package) + ".sha256", DownloadUrl = baseUrl + Uri.EscapeDataString(Path.GetFileNameWithoutExtension(package) + ".sha256") }
+                    release = new GitHubRelease { TagName = latestTag, Draft = false, Prerelease = false, Body = "", Assets = new System.Collections.Generic.List<GitHubAsset> {
+                        new GitHubAsset { Name = package, DownloadUrl = UpdateValidation.BuildOfficialReleaseAssetUri(UpdateConfiguration.GitHubOwner, UpdateConfiguration.GitHubRepository, latestTag, package).AbsoluteUri },
+                        new GitHubAsset { Name = Path.GetFileNameWithoutExtension(package) + ".sha256", DownloadUrl = UpdateValidation.BuildOfficialReleaseAssetUri(UpdateConfiguration.GitHubOwner, UpdateConfiguration.GitHubRepository, latestTag, Path.GetFileNameWithoutExtension(package) + ".sha256").AbsoluteUri }
                     } };
                 }
                 if (!string.Equals(release.TagName, latestTag, StringComparison.Ordinal) || release.Draft || release.Prerelease)

@@ -67,6 +67,8 @@ namespace CharacterTracker.Tests
             True(!SemanticVersion.TryParse("1.06.0", out pre) && !SemanticVersion.TryParse("1.2.3-01", out pre), "reject SemVer leading zeroes");
             SemanticVersion rc2, rc10; True(SemanticVersion.TryParse("1.6.3-rc.2", out rc2) && SemanticVersion.TryParse("1.6.3-rc.10", out rc10) && rc2.CompareTo(rc10) < 0, "SemVer numeric prerelease identifiers compare numerically");
             True(UpdateValidation.IsApiRateLimit(429, null) && UpdateValidation.IsApiRateLimit(403, "0") && !UpdateValidation.IsApiRateLimit(500, "42"), "GitHub API limit classification");
+            Equal("https://github.com/Roxyz0501/aether-tracker-act/releases/download/v1.6.4/Aether-Tracker-ACT-v1.6.4.zip", UpdateValidation.BuildOfficialReleaseAssetUri("Roxyz0501", "aether-tracker-act", "v1.6.4", "Aether-Tracker-ACT-v1.6.4.zip").AbsoluteUri, "rate-limit fallback locks official asset to verified tag");
+            Throws(() => UpdateValidation.BuildOfficialReleaseAssetUri("evil.example", "repo", "v1.6.4", "Aether-Tracker-ACT-v1.6.4.zip"), "fallback rejects unsafe URL owner");
 
             string releaseJson = "{\"tag_name\":\"v1.6.1\",\"name\":\"Stable\",\"body\":\"Notes\",\"draft\":false,\"prerelease\":false,\"assets\":[{\"name\":\"Aether-Tracker-ACT-v1.6.1.zip\",\"browser_download_url\":\"https://github.com/owner/repo/releases/download/v1.6.1/Aether-Tracker-ACT-v1.6.1.zip\"}]}";
             var release = UpdateValidation.ParseRelease(releaseJson);
