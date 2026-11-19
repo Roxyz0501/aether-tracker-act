@@ -10,7 +10,7 @@ if (-not (Test-Path -LiteralPath $msbuild)) {
 }
 if (-not $msbuild -or -not (Test-Path -LiteralPath $msbuild)) { throw "MSBuild was not found. Install Visual Studio Build Tools." }
 if (-not (Test-Path -LiteralPath (Join-Path $ActPath 'Advanced Combat Tracker.exe'))) { throw "ACT reference was not found: $ActPath" }
-& $msbuild CharacterTracker.sln /t:Rebuild /p:Configuration=$Configuration /p:Platform='Any CPU' /p:ACTPath=$ActPath /m
+& $msbuild CharacterTracker.sln /t:Rebuild /p:Configuration=$Configuration /p:Platform='Any CPU' /p:ACTPath=$ActPath /m:1 /nr:false /p:UseSharedCompilation=false
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 & "tests\CharacterTracker.Tests\bin\$Configuration\CharacterTracker.Tests.exe"
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

@@ -6,5 +6,5 @@ using System.Runtime.InteropServices;
 [assembly: AssemblyCompany("Roxyz0501")]
 [assembly: AssemblyProduct("Aether Tracker Updater")]
 [assembly: ComVisible(false)]
-[assembly: AssemblyVersion("1.6.3.0")]
-[assembly: AssemblyFileVersion("1.6.3.0")]
+[assembly: AssemblyVersion("1.6.4.0")]
+[assembly: AssemblyFileVersion("1.6.4.0")]

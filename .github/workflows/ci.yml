@@ -15,9 +15,21 @@ jobs:
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
       - uses: microsoft/setup-msbuild@30375c66a4eea26614e0d39710365f22f8b0af57 # v3
-      - name: Build ACT API stub
-        shell: powershell
-        run: msbuild ci\ActStub\ActStub.csproj /t:Rebuild /p:Configuration=Release /p:Platform=AnyCPU
+      - name: Download and verify official ACT reference
+        shell: pwsh
+        run: |
+          Invoke-WebRequest 'https://advancedcombattracker.com/download.php?id=57' -OutFile "$env:RUNNER_TEMP\ACTv3.zip"
+          Expand-Archive "$env:RUNNER_TEMP\ACTv3.zip" "$env:RUNNER_TEMP\ACTv3"
+          $act = Get-ChildItem "$env:RUNNER_TEMP\ACTv3" -Recurse -Filter 'Advanced Combat Tracker.exe' | Select-Object -First 1
+          if (-not $act) { throw 'Official ACT archive did not contain Advanced Combat Tracker.exe.' }
+          $name = [Reflection.AssemblyName]::GetAssemblyName($act.FullName)
+          $token = ($name.GetPublicKeyToken() | ForEach-Object { $_.ToString('x2') }) -join ''
+          if ($token -ne 'a946b61e93d97868') { throw 'ACT assembly publisher identity did not match.' }
+          $sn = Get-ChildItem "${env:ProgramFiles(x86)}\Microsoft SDKs\Windows" -Filter 'sn.exe' -Recurse | Where-Object { $_.FullName -match 'NETFX 4\.8 Tools' } | Select-Object -First 1
+          if (-not $sn) { throw 'Strong-name verification tool was not found.' }
+          & $sn.FullName -vf $act.FullName
+          if ($LASTEXITCODE -ne 0) { throw 'Official ACT strong-name signature verification failed.' }
+          "ACT_PATH=$($act.DirectoryName)" >> $env:GITHUB_ENV
       - name: Build and test
         shell: powershell
-        run: .\build.ps1 -Configuration Release -ActPath "$PWD\ci\ActStub\bin\Release"
+        run: .\build.ps1 -Configuration Release -ActPath "$env:ACT_PATH"

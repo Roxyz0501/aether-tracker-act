@@ -132,8 +132,8 @@ namespace CharacterTracker.Tests
 
         private static void TestAtomicRollback()
         {
-            string directory = Path.Combine(Path.GetTempPath(), "Aether Update 日本語 " + Guid.NewGuid().ToString("N")); Directory.CreateDirectory(directory);
-            string target = Path.Combine(directory, "CharacterTracker.dll"), incoming = Path.Combine(directory, "incoming.dll"), backup = Path.Combine(directory, "CharacterTracker.dll.backup");
+            string directory = Path.Combine(Path.GetTempPath(), "AT-" + Guid.NewGuid().ToString("N")); Directory.CreateDirectory(directory);
+            string target = Path.Combine(directory, "p.dll"), incoming = Path.Combine(directory, "i.dll"), backup = Path.Combine(directory, "b.dll");
             try {
                 File.WriteAllText(target, "old-version"); File.WriteAllText(incoming, "new-version");
                 Throws(() => CharacterTracker.Updater.AtomicPluginReplacement.Replace(incoming, target, backup, () => { throw new InvalidDataException("simulated post-install verification failure"); }), "failed replacement triggers rollback");
@@ -146,7 +146,7 @@ namespace CharacterTracker.Tests
         {
             string root = Path.GetFullPath(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "..", "..", "..", ".."));
             string path = Path.Combine(Path.GetTempPath(), "Aether-release-test-" + Guid.NewGuid().ToString("N") + ".zip");
-            SemanticVersion expected; SemanticVersion.TryParse("1.6.3", out expected);
+            SemanticVersion expected; SemanticVersion.TryParse("1.6.4", out expected);
             try {
                 using (var archive = ZipFile.Open(path, ZipArchiveMode.Create)) foreach (string name in new[] { "CharacterTracker.dll", "CharacterTracker.Updater.exe", "README.md", "UI_COMMON_SPEC.md" }) {
                     string source = Path.Combine(root, name == "CharacterTracker.dll" || name == "CharacterTracker.Updater.exe" ? "dist" : "", name);
@@ -182,7 +182,7 @@ namespace CharacterTracker.Tests
 
         private static void TestSettingsRecovery()
         {
-            string directory = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "AetherTracker-recovery-test-" + Guid.NewGuid().ToString("N"));
+            string directory = Path.Combine(Path.GetTempPath(), "AT-recovery-" + Guid.NewGuid().ToString("N"));
             Directory.CreateDirectory(directory);
             string path = Path.Combine(directory, "settings.xml");
             try {
@@ -201,7 +201,7 @@ namespace CharacterTracker.Tests
 
         private static void TestSettingsPersistence()
         {
-            string directory = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "AetherTracker-settings-test-" + Guid.NewGuid().ToString("N"));
+            string directory = Path.Combine(Path.GetTempPath(), "AT-settings-" + Guid.NewGuid().ToString("N"));
             Directory.CreateDirectory(directory);
             string path = Path.Combine(directory, "settings.xml");
             try {
