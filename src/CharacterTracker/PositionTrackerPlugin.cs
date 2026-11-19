@@ -36,6 +36,8 @@ namespace CharacterTracker
         private readonly HashSet<UiDispatchTicket> pendingUiDispatches = new HashSet<UiDispatchTicket>();
         private volatile bool stopping;
 
+        public void SetHostedLanguage(string code) { if (!stopping) control?.SetHostedLanguage(code); }
+
         public void InitPlugin(TabPage pluginScreenSpace, Label pluginStatusText)
         {
             pluginStatus = pluginStatusText; settings = TrackerSettings.Load(); Localization.SetLanguage(settings.Language); adapter = new FfxivAdapter();
@@ -176,7 +178,8 @@ namespace CharacterTracker
         private void ApplyLanguage()
         {
             if (stopping) return;
-            pluginStatus.Text = Localization.T("plugin.started");
+            pluginStatus.Text = preparedUpdate != null ? Localization.T("update.ready") :
+                availableUpdate != null ? Localization.T("update.available") + " " + Localization.F("update.latest", availableUpdate.LatestVersion) : Localization.T("plugin.started");
             if (overlay != null) overlay.RefreshVisuals();
             if (listOverlay != null) listOverlay.RefreshVisuals();
             if (mapOverlay != null) mapOverlay.RefreshVisuals();

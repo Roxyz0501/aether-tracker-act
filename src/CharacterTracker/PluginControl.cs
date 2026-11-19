@@ -22,8 +22,9 @@ namespace CharacterTracker
         private readonly CheckBox overlayLocked = LocCheck("overlay.lock");
         private readonly CheckBox facing = LocCheck("facing");
         private readonly CheckBox inactive = LocCheck("inactive");
-        private readonly CheckBox checkUpdatesOnStartup = LocCheck("update.startup");
-        private readonly ComboBox language = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = 180, Anchor = AnchorStyles.Left };
+        private PluginUpdatePage updates;
+        private PluginLanguagePage languages;
+        private bool hosted;
         private readonly TrackBar opacity = Slider(35);
         private readonly Label opacityValue = Label("");
         private readonly TrackBar backgroundOpacity = Slider(0);
@@ -36,13 +37,6 @@ namespace CharacterTracker
         private readonly Button clear = LocButton("tracking.clear", true);
         private readonly Button pointA = LocButton("calibration.a", true);
         private readonly Button pointB = LocButton("calibration.b", true);
-        private readonly Button checkNow = LocButton("update.checkNow", true);
-        private readonly Button installUpdate = LocButton("update.install", true);
-        private readonly Button laterUpdate = LocButton("update.later", true);
-        private readonly Label updateStatus = LocLabel("update.idle");
-        private readonly Label updateVersions = Label("");
-        private readonly Label updateIdentity = Label("");
-        private readonly TextBox updateNotes = new TextBox { Multiline = true, ReadOnly = true, ScrollBars = ScrollBars.Vertical, Dock = DockStyle.Fill, BackColor = Color.White, BorderStyle = BorderStyle.FixedSingle };
         private CalibrationPoint anchorA;
         private IReadOnlyList<ActorSnapshot> actors = new ActorSnapshot[0];
         private uint playerId, territoryId;
@@ -78,7 +72,6 @@ namespace CharacterTracker
             players.Checked = value.ShowPlayers;
             npcs.Checked = value.ShowNpcs;
             others.Checked = value.ShowOthers;
-            checkUpdatesOnStartup.Checked = value.CheckUpdatesOnStartup;
             search.Text = value.SearchText ?? "";
             opacity.Value = Clamp(value.OpacityPercent, 35, 100);
             backgroundOpacity.Value = Clamp(value.BackgroundOpacityPercent, 0, 100);
@@ -86,11 +79,6 @@ namespace CharacterTracker
             backgroundOpacityValue.Text = backgroundOpacity.Value + "%";
             version.Text = "v" + Assembly.GetExecutingAssembly().GetName().Version.ToString(3);
 
-            language.Items.AddRange(new object[] {
-                new LanguageItem("en", "English"), new LanguageItem("ja", "日本語"),
-                new LanguageItem("zh-Hans", "简体中文"), new LanguageItem("ko", "한국어")
-            });
-            SelectLanguage(value.Language);
 
             BuildLayout();
             pointB.Enabled = false;
@@ -110,11 +98,14 @@ namespace CharacterTracker
         {
             supportPage = BuildSupportTab();
             tabs = new PluginTabs(supportPage);
-            tabs.TabPages.Add(BuildDisplayTab());
-            tabs.TabPages.Add(BuildTrackingTab());
-            tabs.TabPages.Add(BuildMapTab());
-            tabs.TabPages.Add(BuildUpdateTab());
-            tabs.TabPages.Add(supportPage);
+            languages = new PluginLanguagePage(settings.Language);
+            updates = new PluginUpdatePage("aether-tracker-act", Assembly.GetExecutingAssembly().GetName().Version.ToString(3), settings.CheckUpdatesOnStartup, settings.Language);
+            tabs.AddContentPage(BuildDisplayTab());
+            tabs.AddContentPage(BuildTrackingTab());
+            tabs.AddContentPage(BuildMapTab());
+            tabs.AddContentPage(languages);
+            tabs.AddContentPage(updates);
+            tabs.AddContentPage(supportPage);
 
             var root = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 3, BackColor = BackColor };
             root.RowStyles.Add(new RowStyle(SizeType.Absolute, 76));
@@ -163,8 +154,7 @@ namespace CharacterTracker
         {
             var page = LocPage("tab.display");
             var layout = BaseLayout(13);
-            layout.Controls.Add(LocLabel("language"), 0, 0);
-            layout.Controls.Add(language, 1, 0);
+            layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 0));
             AddWide(layout, arrowOverlay, 1);
             AddWide(layout, listOverlay, 2);
             AddWide(layout, mapOverlay, 3);
@@ -178,7 +168,6 @@ namespace CharacterTracker
             AddWide(layout, hint, 8);
             status.AutoSize = false; status.Dock = DockStyle.Fill;
             AddWide(layout, status, 9);
-            layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 38));
             for (int i = 1; i <= 5; i++) layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 30));
             layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 46));
             layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 46));
@@ -297,44 +286,6 @@ namespace CharacterTracker
             return page;
         }
 
-        private TabPage BuildUpdateTab()
-        {
-            var page = LocPage("tab.update");
-            var layout = BaseLayout(10);
-            var title = LocLabel("update.title");
-            title.Font = new Font(Localization.UiFontName, 13f, FontStyle.Bold);
-            title.ForeColor = Color.FromArgb(48, 61, 80);
-            AddWide(layout, title, 0);
-            updateIdentity.ForeColor = Color.FromArgb(91, 103, 121);
-            AddWide(layout, updateIdentity, 1);
-            var repository = new LinkLabel { Text = Localization.T("update.repository"), Tag = "loc:update.repository", AutoSize = true, LinkColor = Color.FromArgb(30, 95, 160), ActiveLinkColor = Color.FromArgb(19, 65, 112), Margin = Padding.Empty };
-            repository.LinkClicked += OpenRepositoryLink;
-            AddWide(layout, repository, 2);
-            AddWide(layout, checkUpdatesOnStartup, 3);
-            var actions = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, Margin = Padding.Empty };
-            actions.Controls.Add(checkNow); actions.Controls.Add(installUpdate); actions.Controls.Add(laterUpdate);
-            installUpdate.Enabled = false; laterUpdate.Enabled = false;
-            StyleButton(checkNow, false); StyleButton(installUpdate, true); StyleButton(laterUpdate, false);
-            AddWide(layout, actions, 4);
-            updateStatus.AutoSize = false; updateStatus.Dock = DockStyle.Fill; AddWide(layout, updateStatus, 5);
-            updateVersions.AutoSize = false; updateVersions.Dock = DockStyle.Fill; AddWide(layout, updateVersions, 6);
-            AddWide(layout, LocLabel("update.notes"), 7);
-            AddWide(layout, updateNotes, 8);
-            AddWide(layout, LocExplanation("update.safety"), 9);
-            layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 42));
-            layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 28));
-            layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 26));
-            layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 32));
-            layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 48));
-            layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 44));
-            layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 34));
-            layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 30));
-            layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
-            layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 54));
-            page.Controls.Add(layout);
-            return page;
-        }
-
         private void OpenSupportLink(object sender, EventArgs e)
         {
             try {
@@ -347,27 +298,21 @@ namespace CharacterTracker
             }
         }
 
-        private void OpenRepositoryLink(object sender, LinkLabelLinkClickedEventArgs e)
-        {
-            try { Process.Start(new ProcessStartInfo("https://github.com/Roxyz0501/aether-tracker-act") { UseShellExecute = true }); }
-            catch (Exception ex) { updateStatus.ForeColor = Color.FromArgb(176, 65, 56); updateStatus.Text = Localization.F("update.linkFailed", ex.Message); }
-        }
-
         private void WireEvents()
         {
             foreach (var box in new[] { arrowOverlay, listOverlay, mapOverlay, overlayLocked, facing, inactive, players, npcs, others })
                 box.CheckedChanged += SettingChanged;
-            checkUpdatesOnStartup.CheckedChanged += SettingChanged;
-            language.SelectedIndexChanged += LanguageSelected;
+            updates.StartupChanged += delegate { settings.CheckUpdatesOnStartup = updates.CheckOnStartup; settings.Save(); };
+            languages.LanguageChanged += delegate { if (!hosted) { settings.Language = Localization.NormalizeLanguage(languages.LanguageCode); settings.Save(); ChangeLanguage(settings.Language); } };
             search.TextChanged += SettingChanged;
             opacity.ValueChanged += delegate { opacityValue.Text = opacity.Value + "%"; SettingChanged(this, EventArgs.Empty); };
             backgroundOpacity.ValueChanged += delegate { backgroundOpacityValue.Text = backgroundOpacity.Value + "%"; SettingChanged(this, EventArgs.Empty); };
             clear.Click += delegate { if (ClearRequested != null) ClearRequested(); };
             pointA.Click += delegate { CaptureA(); };
             pointB.Click += delegate { CaptureB(); };
-            checkNow.Click += delegate { if (CheckUpdatesRequested != null) CheckUpdatesRequested(); };
-            installUpdate.Click += delegate { if (InstallUpdateRequested != null) InstallUpdateRequested(); };
-            laterUpdate.Click += delegate { if (DismissUpdateRequested != null) DismissUpdateRequested(); };
+            updates.CheckRequested += delegate { CheckUpdatesRequested?.Invoke(); };
+            updates.InstallRequested += delegate { InstallUpdateRequested?.Invoke(); };
+            updates.LaterRequested += delegate { DismissUpdateRequested?.Invoke(); };
         }
 
         public void UpdateStatus(IReadOnlyList<ActorSnapshot> value, uint currentPlayerId, uint currentTerritoryId, string error)
@@ -393,65 +338,57 @@ namespace CharacterTracker
         private void RenderUpdateResult()
         {
             UpdateResult value = displayedUpdate;
-            if (value == null) {
-                updateStatus.Text = Localization.T("update.idle"); updateVersions.Text = ""; updateNotes.Text = "";
-                installUpdate.Enabled = laterUpdate.Enabled = false; return;
+            string key = "update.idle";
+            var state = UpdatePageState.Ready;
+            if (value != null) switch (value.State) {
+                case UpdateState.Available: state = UpdatePageState.Available; key = value.ApiRateLimited ? "update.rateLimited" : "update.available"; break;
+                case UpdateState.Checking: state = UpdatePageState.Checking; key = "update.checking"; break;
+                case UpdateState.Downloading: state = UpdatePageState.Preparing; key = "update.downloading"; break;
+                case UpdateState.Ready: state = UpdatePageState.Prepared; key = "update.ready"; break;
+                case UpdateState.UpToDate: key = "update.none"; break;
+                case UpdateState.Unconfigured: key = "update.unconfigured"; break;
+                case UpdateState.Failed: state = UpdatePageState.PrepareFailed; key = value.Error == "network" ? "update.networkFailed" : value.Error == "target" ? "update.targetUnavailable" : "update.packageFailed"; break;
             }
-            installUpdate.Enabled = value.State == UpdateState.Available;
-            laterUpdate.Enabled = value.State == UpdateState.Available;
-            checkNow.Enabled = value.State != UpdateState.Checking && value.State != UpdateState.Downloading;
-            if (value.State == UpdateState.Unconfigured) updateStatus.Text = Localization.T("update.unconfigured");
-            else if (value.State == UpdateState.Checking) updateStatus.Text = Localization.T("update.checking");
-            else if (value.State == UpdateState.UpToDate) updateStatus.Text = Localization.T("update.none");
-            else if (value.State == UpdateState.Available) updateStatus.Text = value.ApiRateLimited ? Localization.T("update.rateLimited") : Localization.T("update.available");
-            else if (value.State == UpdateState.Downloading) updateStatus.Text = Localization.T("update.downloading");
-            else if (value.State == UpdateState.Ready) updateStatus.Text = Localization.T("update.ready");
-            else {
-                string message = value.Error == "network" ? Localization.T("update.networkFailed") : value.Error == "target" ? Localization.T("update.targetUnavailable") :
-                    value.Error == "package" ? Localization.T("update.packageFailed") : (value.Error ?? Localization.T("update.packageFailed"));
-                updateStatus.Text = Localization.F("update.failed", message);
-            }
-            updateStatus.ForeColor = value.State == UpdateState.Failed ? Color.FromArgb(176, 65, 56) :
-                value.State == UpdateState.Available ? Color.FromArgb(177, 94, 20) : Color.FromArgb(45, 78, 103);
-            updateVersions.Text = (string.IsNullOrEmpty(value.CurrentVersion) ? "" : Localization.F("update.current", value.CurrentVersion)) +
-                (string.IsNullOrEmpty(value.LatestVersion) ? "" : "    " + Localization.F("update.latest", value.LatestVersion));
-            updateNotes.Text = value.Notes ?? "";
+            string message = Localization.T(key);
+            if (!string.IsNullOrEmpty(value?.CurrentVersion)) message += "\n" + Localization.F("update.current", value.CurrentVersion);
+            if (!string.IsNullOrEmpty(value?.LatestVersion)) message += "   " + Localization.F("update.latest", value.LatestVersion);
+            if (!string.IsNullOrEmpty(value?.Notes)) message += "\n" + value.Notes;
+            updates.ShowState(state, message);
         }
 
-        private void LanguageSelected(object sender, EventArgs e)
+        public void SetHostedLanguage(string code)
         {
-            if (loading) return;
-            var item = language.SelectedItem as LanguageItem;
-            if (item == null) return;
-            settings.Language = item.Code;
-            Localization.SetLanguage(item.Code);
-            settings.Save();
+            if (!hosted) {
+                hosted = true;
+                foreach (var page in new TabPage[] { languages, updates, supportPage }) tabs.TabPages.Remove(page);
+                Disposed += delegate { languages.Dispose(); updates.Dispose(); supportPage.Dispose(); };
+            }
+            ChangeLanguage(code);
+        }
+
+        private void ChangeLanguage(string code)
+        {
+            if (Localization.Language == Localization.NormalizeLanguage(code)) return;
+            Localization.SetLanguage(code);
             ApplyLocalization();
             UpdateStatus(actors, playerId, territoryId, lastConnectionError);
-            RenderUpdateResult();
             if (LanguageChanged != null) LanguageChanged();
-        }
-
-        private void SelectLanguage(string code)
-        {
-            string normalized = Localization.NormalizeLanguage(code);
-            for (int i = 0; i < language.Items.Count; i++) {
-                var item = language.Items[i] as LanguageItem;
-                if (item != null && item.Code == normalized) { language.SelectedIndex = i; return; }
-            }
-            language.SelectedIndex = 0;
         }
 
         private void ApplyLocalization()
         {
             ApplyLocalizationTo(this);
             tabs.SetLanguageFont(Localization.UiFontName);
-            updateIdentity.Text = Localization.F("update.identity", "Roxyz0501", Assembly.GetExecutingAssembly().GetName().Version.ToString(3));
+            languages.SetLanguage(Localization.Language);
+            updates.SetLanguage(Localization.Language);
+            updates.SetCheckOnStartup(settings.CheckUpdatesOnStartup);
+            RenderUpdateResult();
             tabs.Invalidate();
         }
 
         private static void ApplyLocalizationTo(Control parent)
         {
+            if (parent is PluginUpdatePage || parent is PluginLanguagePage) return;
             string tag = parent.Tag as string;
             if (tag != null && tag.StartsWith("loc:", StringComparison.Ordinal)) parent.Text = Localization.T(tag.Substring(4));
             if (!(parent is TextBox) && !(parent is TrackBar) && !(parent is PluginTabs)) {
@@ -475,7 +412,6 @@ namespace CharacterTracker
             settings.SearchText = search.Text;
             settings.OpacityPercent = opacity.Value;
             settings.BackgroundOpacityPercent = backgroundOpacity.Value;
-            settings.CheckUpdatesOnStartup = checkUpdatesOnStartup.Checked;
             settings.Save();
             if (SettingsChanged != null) SettingsChanged();
         }
@@ -545,12 +481,6 @@ namespace CharacterTracker
 
         private static int Clamp(int value, int min, int max) { return Math.Max(min, Math.Min(max, value)); }
 
-        private sealed class LanguageItem
-        {
-            public readonly string Code, Name;
-            public LanguageItem(string code, string name) { Code = code; Name = name; }
-            public override string ToString() { return Name; }
-        }
     }
 
     internal sealed class CoordinateDialog : Form

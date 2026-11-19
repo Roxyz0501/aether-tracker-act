@@ -47,7 +47,7 @@
     <Compile Include="FfxivAdapter.cs" />
     <Compile Include="OverlayForm.cs" />
     <Compile Include="PluginControl.cs" />
-    <Compile Include="PluginTabs.cs" />
+    <Compile Include="..\..\shared\*.cs" />
     <Compile Include="PositionTrackerPlugin.cs" />
     <Compile Include="Settings.cs" />
   </ItemGroup>

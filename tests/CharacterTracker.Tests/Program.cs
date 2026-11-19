@@ -146,7 +146,7 @@ namespace CharacterTracker.Tests
         {
             string root = Path.GetFullPath(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "..", "..", "..", ".."));
             string path = Path.Combine(Path.GetTempPath(), "Aether-release-test-" + Guid.NewGuid().ToString("N") + ".zip");
-            SemanticVersion expected; SemanticVersion.TryParse("1.6.4", out expected);
+            SemanticVersion expected; SemanticVersion.TryParse("1.6.5", out expected);
             try {
                 using (var archive = ZipFile.Open(path, ZipArchiveMode.Create)) foreach (string name in new[] { "CharacterTracker.dll", "CharacterTracker.Updater.exe", "README.md", "UI_COMMON_SPEC.md" }) {
                     string source = Path.Combine(root, name == "CharacterTracker.dll" || name == "CharacterTracker.Updater.exe" ? "dist" : "", name);
