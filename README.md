@@ -1,12 +1,12 @@
 # Aether Tracker for ACT
 
-## 1.6.2
+## 1.6.3
 
 - Hidden control/overlay states skip FFXIV actor acquisition; visible overlays request a redraw only when their displayed data changes.
 - Game-window discovery is shared across overlays and limited to one lookup per second.
 - Map downloads and cache entries now have strict response, image-dimension, count, byte, and 180-day age limits; the existing cache is reused and legacy entries remain readable.
 - Config replacement is atomic and retains recoverable backups. Invalid Config data is left intact while the newest valid backup is loaded.
-- Manual update downloads, manifests, ZIP entry counts, expanded sizes, and DLL extraction are bounded and cancellable.
+- Updates use the verified ACT plugin path, stage both the plugin and helper, and wait for ACT to close before an atomic replacement. The updater checks identities and hashes, preserves a timestamped backup, and attempts rollback if post-replacement verification fails.
 
 The included measurements are deterministic test counters/simulations, not an estimate of real SSD wear or actual in-game FPS. No production Config or map-cache data was used during tests.
 
@@ -28,9 +28,9 @@ Configに言語がない初回起動だけWindows UI言語を確認し、`ja`系
 
 ## 更新機能
 
-「更新」タブには「起動時に更新を確認」と「今すぐ確認」があります。確認は非同期で行い、失敗しても通常機能を継続します。更新が見つかった場合はACT下部のプラグインステータスと更新タブへ現在版、最新版、更新内容を表示します。ダウンロードは利用者が「更新する」を押した場合だけ開始します。
+「更新」タブには作者名・導入版・GitHubリポジトリへのリンク、「起動時に更新を確認」と「今すぐ確認」があります。起動時はGitHub公式の `/releases/latest` へ軽量HEAD確認を行い、導入版と同じ場合はREST APIを呼びません。新しいタグがある場合だけそのタグのRelease情報を確認します。確認は非同期で、失敗しても通常機能を継続します。GitHub APIの利用制限時は、確認済みの最新安定タグに固定した公式ZIPとSHA-256へフォールバックします。更新が見つかった場合はACT下部のプラグインステータスと更新タブへ現在版、最新版、更新内容を表示します。ダウンロードは利用者が「更新する」を押した場合だけ開始します。
 
-更新パッケージとSHA-256マニフェストを検証し、プラグイン名・バージョン・収録ファイルを確認してから `%LOCALAPPDATA%\AetherTracker\Updates` へ保存します。ACT終了後に補助プロセスは起動しません。ダウンロード完了後はACTを終了し、検証済みZIP内の `CharacterTracker.dll` をプラグイン配置先へ手動で置き換えてください。
+更新パッケージとSHA-256マニフェストを検証し、プラグイン名・作者・バージョン・収録ファイルを確認してから `%LOCALAPPDATA%\AetherTracker\Updates` へステージします。更新を準備した後、ACTを終了すると補助プロセスがACT終了を待ってから配置先DLLを原子的に置き換えます。置換前に現行DLLのハッシュを再確認し、タイムスタンプ付きバックアップを保持します。置換後の検証に失敗した場合はバックアップから戻します。完了後はACTを再起動してください。
 
 ### 更新元
 
@@ -120,7 +120,7 @@ ACTが標準以外の場所にある場合:
 5. 生成された `Aether-Tracker-ACT-vX.Y.Z.zip` と `Aether-Tracker-ACT-vX.Y.Z.sha256` を両方添付します。ファイル名は変更しません。
 6. Release notesへ利用者向け変更点を記載します。プラグインは先頭1200文字を更新タブへ表示します。
 
-更新通信はHTTPSの `api.github.com`、`github.com`、GitHub管理下の `*.githubusercontent.com` だけを許可します。GitHubトークンはプラグインへ埋め込みません。ZIP内は `CharacterTracker.dll`、README、共通UI仕様書だけを許可し、絶対パス、`..`、別プラグイン、想定外ファイルを拒否します。ACT終了後に動作するアップデータは使用しません。
+更新通信はHTTPSの `api.github.com`、`github.com`、GitHub管理下の `*.githubusercontent.com` だけを許可します。GitHubトークンはプラグインへ埋め込みません。ZIP内は `CharacterTracker.dll`、`CharacterTracker.Updater.exe`、README、共通UI仕様書だけを許可し、絶対パス、`..`、別プラグイン、想定外ファイルを拒否します。
 
 ## 注意
 

@@ -53,32 +53,48 @@ namespace CharacterTracker
 
         private static Dictionary<string, Dictionary<string, string>> BuildRuntimeOverrides()
         {
-            return new Dictionary<string, Dictionary<string, string>> {
+            var resources = new Dictionary<string, Dictionary<string, string>> {
                 { "en", new Dictionary<string, string> {
-                    { "update.ready", "Package verified and saved under %LOCALAPPDATA%\\AetherTracker\\Updates. Close ACT, replace CharacterTracker.dll from the ZIP, then restart ACT." },
-                    { "update.safety", "Updates only download after you click Update. No helper process runs after ACT closes." },
+                    { "update.ready", "Package verified and staged. The updater will replace the plugin after ACT exits; restart ACT afterward. A timestamped backup is retained." },
+                    { "update.safety", "Updates download only after you click Update. A verified helper waits for ACT to exit, then replaces the DLL with backup and rollback protection." },
                     { "update.downloading", "Downloading and validating the update package…" },
+                    { "update.packageFailed", "The update package failed validation or could not be staged." },
                     { "settings.saveFailed", "Settings could not be saved. Your changes remain in memory until ACT exits: {0}" }
                 } },
                 { "ja", new Dictionary<string, string> {
-                    { "update.ready", "更新パッケージを検証し、%LOCALAPPDATA%\\AetherTracker\\Updatesへ保存しました。ACTを終了し、ZIP内のCharacterTracker.dllを手動で置き換えてからACTを再起動してください。" },
-                    { "update.safety", "更新ボタンを押した場合だけダウンロードします。ACT終了後も補助プロセスは起動しません。" },
+                    { "update.ready", "更新パッケージを検証して準備しました。ACT終了後に補助プログラムが置換します。適用後はACTを再起動してください。バックアップを保持します。" },
+                    { "update.safety", "更新ボタンを押した場合だけ取得します。検証済み補助プログラムがACT終了を待ってDLLを置換し、バックアップとロールバックを行います。" },
                     { "update.downloading", "更新パッケージをダウンロードして検証中…" },
+                    { "update.packageFailed", "更新パッケージを検証または準備できませんでした。" },
                     { "settings.saveFailed", "設定を保存できませんでした。変更はACT終了までメモリに保持されます: {0}" }
                 } },
                 { "zh-Hans", new Dictionary<string, string> {
-                    { "update.ready", "更新包已验证并保存至%LOCALAPPDATA%\\AetherTracker\\Updates。请关闭ACT，从ZIP中手动替换CharacterTracker.dll，然后重新启动ACT。" },
-                    { "update.safety", "仅在点击更新后下载。ACT关闭后不会启动辅助进程。" },
+                    { "update.ready", "更新包已验证并准备就绪。ACT退出后辅助程序将替换插件，请随后重启ACT。将保留带时间戳的备份。" },
+                    { "update.safety", "仅在点击更新后下载。经过验证的辅助程序会等待ACT退出，再替换DLL，并提供备份和回滚保护。" },
                     { "update.downloading", "正在下载并验证更新包…" },
+                    { "update.packageFailed", "更新包验证失败或无法完成准备。" },
                     { "settings.saveFailed", "无法保存设置。更改会保留在内存中，直到ACT退出：{0}" }
                 } },
                 { "ko", new Dictionary<string, string> {
-                    { "update.ready", "업데이트 패키지를 검증하여 %LOCALAPPDATA%\\AetherTracker\\Updates에 저장했습니다. ACT를 종료한 뒤 ZIP의 CharacterTracker.dll을 직접 교체하고 ACT를 다시 시작하세요." },
-                    { "update.safety", "업데이트를 클릭했을 때만 다운로드합니다. ACT 종료 후 보조 프로세스는 실행하지 않습니다." },
+                    { "update.ready", "업데이트 패키지가 검증 및 준비되었습니다. ACT 종료 후 보조 프로그램이 교체합니다. 적용 후 ACT를 다시 시작하세요. 시간 표시 백업을 보관합니다." },
+                    { "update.safety", "업데이트를 클릭한 경우에만 다운로드합니다. 검증된 보조 프로그램이 ACT 종료를 기다린 뒤 DLL을 교체하며 백업 및 롤백을 보호합니다." },
                     { "update.downloading", "업데이트 패키지를 다운로드하고 검증 중…" },
+                    { "update.packageFailed", "업데이트 패키지를 검증하거나 준비하지 못했습니다." },
                     { "settings.saveFailed", "설정을 저장하지 못했습니다. 변경 사항은 ACT가 종료될 때까지 메모리에 유지됩니다: {0}" }
                 } }
             };
+            AddUpdateIdentity(resources["en"], "Author: {0}  •  Installed version: {1}", "Open Aether Tracker on GitHub", "Could not open GitHub: {0}", "Could not identify the installed plugin path: {0}", "ACT did not report a valid installed CharacterTracker.dll path.", "GitHub API rate limit reached. The verified latest stable tag is available; release assets can still be checked when you choose Update.", "Could not reach GitHub. Check your connection and try again later.");
+            AddUpdateIdentity(resources["ja"], "作者: {0}  •  導入版: {1}", "GitHubでAether Trackerを開く", "GitHubを開けませんでした: {0}", "導入済みプラグインの場所を確認できません: {0}", "ACTから有効なCharacterTracker.dllの場所を取得できませんでした。", "GitHub APIの利用制限に達しました。最新安定版タグは確認できています。更新操作時に公式配布ファイルを確認できます。", "GitHubへ接続できませんでした。通信を確認して後でもう一度お試しください。");
+            AddUpdateIdentity(resources["zh-Hans"], "作者：{0}  •  已安装版本：{1}", "在GitHub打开Aether Tracker", "无法打开GitHub：{0}", "无法识别已安装插件路径：{0}", "ACT未提供有效的CharacterTracker.dll路径。", "已达到GitHub API速率限制。已确认最新稳定版标签；您选择更新时仍可验证官方文件。", "无法连接GitHub。请检查网络并稍后重试。");
+            AddUpdateIdentity(resources["ko"], "작성자: {0}  •  설치 버전: {1}", "GitHub에서 Aether Tracker 열기", "GitHub를 열 수 없습니다: {0}", "설치된 플러그인 경로를 확인할 수 없습니다: {0}", "ACT에서 유효한 CharacterTracker.dll 경로를 제공하지 않았습니다.", "GitHub API 요청 한도에 도달했습니다. 최신 안정 태그는 확인했으며 업데이트를 선택하면 공식 파일을 검증할 수 있습니다.", "GitHub에 연결할 수 없습니다. 네트워크를 확인하고 나중에 다시 시도하세요.");
+            return resources;
+        }
+
+        private static void AddUpdateIdentity(Dictionary<string, string> values, string identity, string repository, string linkError, string targetError, string targetUnavailable, string rateLimited, string networkError)
+        {
+            values["update.identity"] = identity; values["update.repository"] = repository; values["update.linkFailed"] = linkError;
+            values["update.targetFailed"] = targetError; values["update.targetUnavailable"] = targetUnavailable;
+            values["update.rateLimited"] = rateLimited; values["update.networkFailed"] = networkError;
         }
 
         private static Dictionary<string, Dictionary<string, string>> BuildResources()
@@ -111,7 +127,7 @@ namespace CharacterTracker
                 { "update.unconfigured", "Update source is not configured. Set the verified GitHub owner and repository in UpdateConfiguration.cs, then rebuild." },
                 { "update.current", "Current version: {0}" }, { "update.latest", "Latest version: {0}" }, { "update.available", "An update is available." },
                 { "update.none", "You are using the latest stable version." }, { "update.failed", "Update check failed: {0}" }, { "update.skipped", "Version {0} was deferred." },
-                { "update.downloading", "Downloading and validating the signed update package…" },
+                { "update.downloading", "Downloading and validating the update package…" },
                 { "update.ready", "Update staged. Close ACT to apply it, then restart ACT." }, { "update.installFailed", "Update preparation failed: {0}" },
                 { "update.notes", "Release notes" }, { "update.safety", "Updates only download after you click Update. The loaded DLL is never overwritten directly." },
                 { "plugin.started", "Aether Tracker: running" }, { "plugin.stopped", "Aether Tracker: stopped" },
@@ -133,7 +149,7 @@ namespace CharacterTracker
                     { "connection.wait", "●  FFXIV_ACT_Plugin 接続待機中" }, { "connected", "●  接続中  •  {0}体  •  Territory {1}" }, { "tracking.search", "一覧検索" }, { "tracking.clear", "追跡を解除" }, { "tracking.none", "追跡対象: なし" }, { "tracking.target", "追跡対象: {0}  •  {1}" }, { "direction.hint", "OFFではマップ北が上になります。カメラ角には追従しません。" },
                     { "calibration.title", "ゲーム内座標の校正" }, { "calibration.a", "地点Aを記録" }, { "calibration.b", "地点Bを記録" }, { "calibration.none", "ゲーム内座標: 未校正" }, { "calibration.done", "ゲーム内座標: 校正済み  •  Territory {0}" }, { "calibration.help", "同じマップ内の離れた2地点で、ゲーム内マップに表示されるX/Yを記録します。\r\nマップ上ではホイールでズームし、点をクリックすると対象名を表示します。" }, { "calibration.noPlayer", "プレイヤー情報を取得できません。" }, { "calibration.sameMap", "地点Aと同じマップで校正してください。" }, { "calibration.aSaved", "地点Aを記録しました。X/Y両方向へ5 yalms以上移動してください。" }, { "calibration.saved", "校正を保存しました。" }, { "calibration.dialogA", "ゲーム内マップに表示中の座標" }, { "calibration.dialogB", "移動後のゲーム内マップ座標" }, { "calibration.failed", "校正できません" }, { "record", "記録" }, { "cancel", "キャンセル" },
                     { "support.title", "Roxyz0501の開発を支援" }, { "support.description", "Aether Trackerを気に入っていただけた場合は、Ko-fiから任意で開発を支援できます。\r\n支援しなくてもすべての機能を利用でき、機能差はありません。" }, { "support.button", "Ko-fiでRoxyz0501を支援する" }, { "support.note", "このページは案内専用です。起動時のポップアップ、自動遷移、繰り返し通知、機能制限はありません。" }, { "support.opened", "既定のブラウザでKo-fiを開きました。" }, { "support.failed", "リンクを開けませんでした。ブラウザへURLを貼り付けてください。({0})" },
-                    { "update.startup", "起動時に更新を確認" }, { "update.checkNow", "今すぐ確認" }, { "update.install", "更新する" }, { "update.later", "後で" }, { "update.title", "Aether Trackerの更新" }, { "update.idle", "まだ更新を確認していません。" }, { "update.checking", "GitHub Releasesを確認中…" }, { "update.unconfigured", "更新元が未設定です。確認済みのGitHub所有者名とリポジトリ名をUpdateConfiguration.csへ設定し、再ビルドしてください。" }, { "update.current", "現在版: {0}" }, { "update.latest", "最新版: {0}" }, { "update.available", "利用可能な更新があります。" }, { "update.none", "最新の安定版を使用しています。" }, { "update.failed", "更新確認に失敗しました: {0}" }, { "update.skipped", "バージョン {0} を後回しにしました。" }, { "update.downloading", "署名付き更新パッケージをダウンロードして検証中…" }, { "update.ready", "更新を準備しました。ACTを終了すると適用されます。その後ACTを再起動してください。" }, { "update.installFailed", "更新準備に失敗しました: {0}" }, { "update.notes", "更新内容" }, { "update.safety", "更新ボタンを押した場合だけダウンロードします。ロード中のDLLを直接上書きしません。" },
+                    { "update.startup", "起動時に更新を確認" }, { "update.checkNow", "今すぐ確認" }, { "update.install", "更新する" }, { "update.later", "後で" }, { "update.title", "Aether Trackerの更新" }, { "update.idle", "まだ更新を確認していません。" }, { "update.checking", "GitHub Releasesを確認中…" }, { "update.unconfigured", "更新元が未設定です。確認済みのGitHub所有者名とリポジトリ名をUpdateConfiguration.csへ設定し、再ビルドしてください。" }, { "update.current", "現在版: {0}" }, { "update.latest", "最新版: {0}" }, { "update.available", "利用可能な更新があります。" }, { "update.none", "最新の安定版を使用しています。" }, { "update.failed", "更新確認に失敗しました: {0}" }, { "update.skipped", "バージョン {0} を後回しにしました。" }, { "update.downloading", "更新パッケージをダウンロードして検証中…" }, { "update.ready", "更新を準備しました。ACTを終了すると適用されます。その後ACTを再起動してください。" }, { "update.installFailed", "更新準備に失敗しました: {0}" }, { "update.notes", "更新内容" }, { "update.safety", "更新ボタンを押した場合だけダウンロードします。ロード中のDLLを直接上書きしません。" },
                     { "plugin.started", "Aether Tracker: 起動済み" }, { "plugin.stopped", "Aether Tracker: 停止" }, { "map.checkingTerritory", "Territory {0} のマップを確認中…" }, { "map.loading", "Map {0} を取得中…" }, { "map.failed", "取得失敗: {0}" }, { "map.waiting", "エリア情報を確認しています…" }, { "actors.waiting", "キャラクター待機中" }, { "coordinates.raw", "座標: raw" }, { "coordinates.game", "座標: ゲーム内" }, { "tracking.lost", "対象を見失いました" }, { "tracking.placeholder", "追跡対象" }, { "height", "高低差 {0:+0.0;-0.0;0.0}" },
                     { "column.name", "名前" }, { "column.type", "種類" }, { "column.distance", "距離" }, { "overlay.unlocked", "固定解除  •  ドラッグ / サイズ変更" }, { "overlay.waiting", "待機中" }, { "overlay.tracking", "追跡中" }, { "overlay.lost", "見失い" },
                     { "error.ffxivDisabled", "FFXIV_ACT_Plugin.dll が有効ではありません。" }, { "error.repository", "FFXIV DataRepository を取得できません。" }, { "error.api", "FFXIV_ACT_Plugin の公開APIが見つかりません。更新を確認してください。" }, { "error.move", "X方向とY方向の両方へ5 yalms以上移動してから地点Bを記録してください。" }, { "error.scale", "入力座標から得た縮尺が通常範囲外です。ゲーム内X/Yを確認してください。" },

@@ -5,6 +5,7 @@ using System.Drawing;
 using System.Linq;
 using System.Reflection;
 using System.Windows.Forms;
+using Roxyz.Act.UI;
 
 namespace CharacterTracker
 {
@@ -40,15 +41,15 @@ namespace CharacterTracker
         private readonly Button laterUpdate = LocButton("update.later", true);
         private readonly Label updateStatus = LocLabel("update.idle");
         private readonly Label updateVersions = Label("");
+        private readonly Label updateIdentity = Label("");
         private readonly TextBox updateNotes = new TextBox { Multiline = true, ReadOnly = true, ScrollBars = ScrollBars.Vertical, Dock = DockStyle.Fill, BackColor = Color.White, BorderStyle = BorderStyle.FixedSingle };
         private CalibrationPoint anchorA;
         private IReadOnlyList<ActorSnapshot> actors = new ActorSnapshot[0];
         private uint playerId, territoryId;
         private readonly TrackerSettings settings;
         private bool loading = true;
-        private TabControl tabs;
+        private PluginTabs tabs;
         private TabPage supportPage;
-        private int hoveredTabIndex = -1;
         private string lastConnectionError;
         private UpdateResult displayedUpdate;
 
@@ -83,7 +84,7 @@ namespace CharacterTracker
             backgroundOpacity.Value = Clamp(value.BackgroundOpacityPercent, 0, 100);
             opacityValue.Text = opacity.Value + "%";
             backgroundOpacityValue.Text = backgroundOpacity.Value + "%";
-            version.Text = "v" + Assembly.GetExecutingAssembly().GetName().Version.ToString(3) + "  •  Roxyz0501";
+            version.Text = "v" + Assembly.GetExecutingAssembly().GetName().Version.ToString(3);
 
             language.Items.AddRange(new object[] {
                 new LanguageItem("en", "English"), new LanguageItem("ja", "日本語"),
@@ -107,16 +108,13 @@ namespace CharacterTracker
 
         private void BuildLayout()
         {
-            tabs = new TabControl { Dock = DockStyle.Fill, Font = new Font("Yu Gothic UI Semibold", 9f), Padding = new Point(18, 6), DrawMode = TabDrawMode.OwnerDrawFixed };
+            supportPage = BuildSupportTab();
+            tabs = new PluginTabs(supportPage);
             tabs.TabPages.Add(BuildDisplayTab());
             tabs.TabPages.Add(BuildTrackingTab());
             tabs.TabPages.Add(BuildMapTab());
-            supportPage = BuildSupportTab();
             tabs.TabPages.Add(BuildUpdateTab());
             tabs.TabPages.Add(supportPage);
-            tabs.DrawItem += DrawTab;
-            tabs.MouseMove += TabMouseMove;
-            tabs.MouseLeave += delegate { hoveredTabIndex = -1; tabs.Invalidate(); };
 
             var root = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 3, BackColor = BackColor };
             root.RowStyles.Add(new RowStyle(SizeType.Absolute, 76));
@@ -302,23 +300,30 @@ namespace CharacterTracker
         private TabPage BuildUpdateTab()
         {
             var page = LocPage("tab.update");
-            var layout = BaseLayout(9);
+            var layout = BaseLayout(10);
             var title = LocLabel("update.title");
             title.Font = new Font(Localization.UiFontName, 13f, FontStyle.Bold);
             title.ForeColor = Color.FromArgb(48, 61, 80);
             AddWide(layout, title, 0);
-            AddWide(layout, checkUpdatesOnStartup, 1);
+            updateIdentity.ForeColor = Color.FromArgb(91, 103, 121);
+            AddWide(layout, updateIdentity, 1);
+            var repository = new LinkLabel { Text = Localization.T("update.repository"), Tag = "loc:update.repository", AutoSize = true, LinkColor = Color.FromArgb(30, 95, 160), ActiveLinkColor = Color.FromArgb(19, 65, 112), Margin = Padding.Empty };
+            repository.LinkClicked += OpenRepositoryLink;
+            AddWide(layout, repository, 2);
+            AddWide(layout, checkUpdatesOnStartup, 3);
             var actions = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, Margin = Padding.Empty };
             actions.Controls.Add(checkNow); actions.Controls.Add(installUpdate); actions.Controls.Add(laterUpdate);
             installUpdate.Enabled = false; laterUpdate.Enabled = false;
             StyleButton(checkNow, false); StyleButton(installUpdate, true); StyleButton(laterUpdate, false);
-            AddWide(layout, actions, 2);
-            updateStatus.AutoSize = false; updateStatus.Dock = DockStyle.Fill; AddWide(layout, updateStatus, 3);
-            updateVersions.AutoSize = false; updateVersions.Dock = DockStyle.Fill; AddWide(layout, updateVersions, 4);
-            AddWide(layout, LocLabel("update.notes"), 5);
-            AddWide(layout, updateNotes, 6);
-            AddWide(layout, LocExplanation("update.safety"), 7);
+            AddWide(layout, actions, 4);
+            updateStatus.AutoSize = false; updateStatus.Dock = DockStyle.Fill; AddWide(layout, updateStatus, 5);
+            updateVersions.AutoSize = false; updateVersions.Dock = DockStyle.Fill; AddWide(layout, updateVersions, 6);
+            AddWide(layout, LocLabel("update.notes"), 7);
+            AddWide(layout, updateNotes, 8);
+            AddWide(layout, LocExplanation("update.safety"), 9);
             layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 42));
+            layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 28));
+            layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 26));
             layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 32));
             layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 48));
             layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 44));
@@ -342,39 +347,10 @@ namespace CharacterTracker
             }
         }
 
-        private void DrawTab(object sender, DrawItemEventArgs e)
+        private void OpenRepositoryLink(object sender, LinkLabelLinkClickedEventArgs e)
         {
-            bool selected = e.Index == tabs.SelectedIndex;
-            bool hovered = e.Index == hoveredTabIndex;
-            bool support = tabs.TabPages[e.Index] == supportPage;
-            Color background;
-            Color foreground;
-
-            background = selected ? Color.White : Color.FromArgb(240, 242, 245);
-            foreground = Color.FromArgb(42, 53, 69);
-            if (support) {
-                background = selected ? Color.FromArgb(255, 245, 226) : hovered ? Color.FromArgb(255, 238, 207) : Color.FromArgb(250, 231, 197);
-                foreground = selected ? Color.FromArgb(137, 62, 7) : hovered ? Color.FromArgb(157, 72, 8) : Color.FromArgb(174, 84, 13);
-            } else if (hovered && !selected) background = Color.FromArgb(247, 248, 250);
-
-            using (var brush = new SolidBrush(background)) e.Graphics.FillRectangle(brush, e.Bounds);
-            TextRenderer.DrawText(e.Graphics, tabs.TabPages[e.Index].Text, tabs.Font, e.Bounds, foreground,
-                TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.SingleLine);
-            if (support && selected) {
-                using (var pen = new Pen(Color.FromArgb(213, 137, 32), 2f))
-                    e.Graphics.DrawLine(pen, e.Bounds.Left + 4, e.Bounds.Bottom - 2, e.Bounds.Right - 4, e.Bounds.Bottom - 2);
-            }
-        }
-
-        private void TabMouseMove(object sender, MouseEventArgs e)
-        {
-            int index = -1;
-            for (int i = 0; i < tabs.TabCount; i++) {
-                if (tabs.GetTabRect(i).Contains(e.Location)) { index = i; break; }
-            }
-            if (index == hoveredTabIndex) return;
-            hoveredTabIndex = index;
-            tabs.Invalidate();
+            try { Process.Start(new ProcessStartInfo("https://github.com/Roxyz0501/aether-tracker-act") { UseShellExecute = true }); }
+            catch (Exception ex) { updateStatus.ForeColor = Color.FromArgb(176, 65, 56); updateStatus.Text = Localization.F("update.linkFailed", ex.Message); }
         }
 
         private void WireEvents()
@@ -427,10 +403,14 @@ namespace CharacterTracker
             if (value.State == UpdateState.Unconfigured) updateStatus.Text = Localization.T("update.unconfigured");
             else if (value.State == UpdateState.Checking) updateStatus.Text = Localization.T("update.checking");
             else if (value.State == UpdateState.UpToDate) updateStatus.Text = Localization.T("update.none");
-            else if (value.State == UpdateState.Available) updateStatus.Text = Localization.T("update.available");
+            else if (value.State == UpdateState.Available) updateStatus.Text = value.ApiRateLimited ? Localization.T("update.rateLimited") : Localization.T("update.available");
             else if (value.State == UpdateState.Downloading) updateStatus.Text = Localization.T("update.downloading");
             else if (value.State == UpdateState.Ready) updateStatus.Text = Localization.T("update.ready");
-            else updateStatus.Text = Localization.F("update.failed", value.Error ?? "Unknown error");
+            else {
+                string message = value.Error == "network" ? Localization.T("update.networkFailed") : value.Error == "target" ? Localization.T("update.targetUnavailable") :
+                    value.Error == "package" ? Localization.T("update.packageFailed") : (value.Error ?? Localization.T("update.packageFailed"));
+                updateStatus.Text = Localization.F("update.failed", message);
+            }
             updateStatus.ForeColor = value.State == UpdateState.Failed ? Color.FromArgb(176, 65, 56) :
                 value.State == UpdateState.Available ? Color.FromArgb(177, 94, 20) : Color.FromArgb(45, 78, 103);
             updateVersions.Text = (string.IsNullOrEmpty(value.CurrentVersion) ? "" : Localization.F("update.current", value.CurrentVersion)) +
@@ -465,6 +445,8 @@ namespace CharacterTracker
         private void ApplyLocalization()
         {
             ApplyLocalizationTo(this);
+            tabs.SetLanguageFont(Localization.UiFontName);
+            updateIdentity.Text = Localization.F("update.identity", "Roxyz0501", Assembly.GetExecutingAssembly().GetName().Version.ToString(3));
             tabs.Invalidate();
         }
 
@@ -472,7 +454,7 @@ namespace CharacterTracker
         {
             string tag = parent.Tag as string;
             if (tag != null && tag.StartsWith("loc:", StringComparison.Ordinal)) parent.Text = Localization.T(tag.Substring(4));
-            if (!(parent is TextBox) && !(parent is TrackBar)) {
+            if (!(parent is TextBox) && !(parent is TrackBar) && !(parent is PluginTabs)) {
                 try { parent.Font = new Font(Localization.UiFontName, parent.Font.Size, parent.Font.Style); } catch { }
             }
             foreach (Control child in parent.Controls) ApplyLocalizationTo(child);

@@ -52,6 +52,8 @@ namespace CharacterTracker.Tests
             firstRun.Language = "ja";
             True(!TrackerSettings.EnsureLanguage(firstRun, new CultureInfo("en-US")) && firstRun.Language == "ja", "saved language is retained");
             Localization.SetLanguage("ja"); Equal("支援", Localization.T("tab.support"), "Japanese support tab");
+            True(Localization.F("update.identity", "Roxyz0501", "1.6.3").Contains("Roxyz0501") && Localization.F("update.identity", "Roxyz0501", "1.6.3").Contains("1.6.3"), "localized updater identity");
+            True(!string.IsNullOrWhiteSpace(Localization.T("update.rateLimited")) && !string.IsNullOrWhiteSpace(Localization.T("update.networkFailed")), "localized rate-limit and network states");
             Equal("English fallback", Localization.T("test.fallback"), "translation fallback");
             Localization.SetLanguage("invalid"); Equal("Support", Localization.T("tab.support"), "invalid language fallback");
             True(Localization.T("tab.support").IndexOf("★", StringComparison.Ordinal) < 0 && Localization.T("tab.support").IndexOf("☆", StringComparison.Ordinal) < 0, "no star in support tab");
@@ -61,6 +63,9 @@ namespace CharacterTracker.Tests
             True(SemanticVersion.TryParse("1.5.9", out v159) && v160.CompareTo(v159) > 0, "SemVer comparison");
             True(SemanticVersion.TryParse("1.6.0-beta.1", out pre) && v160.CompareTo(pre) > 0, "stable after prerelease");
             True(!SemanticVersion.TryParse("1.6", out pre), "reject incomplete SemVer");
+            True(!SemanticVersion.TryParse("1.06.0", out pre) && !SemanticVersion.TryParse("1.2.3-01", out pre), "reject SemVer leading zeroes");
+            SemanticVersion rc2, rc10; True(SemanticVersion.TryParse("1.6.3-rc.2", out rc2) && SemanticVersion.TryParse("1.6.3-rc.10", out rc10) && rc2.CompareTo(rc10) < 0, "SemVer numeric prerelease identifiers compare numerically");
+            True(UpdateValidation.IsApiRateLimit(429, null) && UpdateValidation.IsApiRateLimit(403, "0") && !UpdateValidation.IsApiRateLimit(500, "42"), "GitHub API limit classification");
 
             string releaseJson = "{\"tag_name\":\"v1.6.1\",\"name\":\"Stable\",\"body\":\"Notes\",\"draft\":false,\"prerelease\":false,\"assets\":[{\"name\":\"Aether-Tracker-ACT-v1.6.1.zip\",\"browser_download_url\":\"https://github.com/owner/repo/releases/download/v1.6.1/Aether-Tracker-ACT-v1.6.1.zip\"}]}";
             var release = UpdateValidation.ParseRelease(releaseJson);
@@ -81,12 +86,15 @@ namespace CharacterTracker.Tests
             True(!UpdateValidation.IsSafeEntry("../CharacterTracker.dll"), "Zip Slip parent rejected");
             True(!UpdateValidation.IsSafeEntry("C:\\CharacterTracker.dll"), "absolute path rejected");
             True(!UpdateValidation.IsSafeEntry("OtherPlugin.dll"), "unexpected plugin rejected");
-            True(!UpdateValidation.IsSafeEntry("CharacterTracker.Updater.exe"), "helper updater rejected");
+            True(UpdateValidation.IsSafeEntry("CharacterTracker.Updater.exe"), "verified updater package entry allowed");
             Throws(() => UpdateValidation.ReadBoundedAsync(new MemoryStream(new byte[11]), 10, CancellationToken.None).GetAwaiter().GetResult(), "bounded response rejects oversized body");
             using (var canceled = new CancellationTokenSource()) {
                 canceled.Cancel(); Throws(() => UpdateValidation.ReadBoundedAsync(new MemoryStream(new byte[1]), 10, canceled.Token).GetAwaiter().GetResult(), "bounded response honors cancellation");
             }
             TestPackageLimits();
+            TestRegisteredTargetPath();
+            TestAtomicRollback();
+            TestReleasePackage();
             TrackerRuntimeMetrics.Reset();
             int visibleTicks = 60, hiddenTicks = 60;
             for (int i = 0; i < visibleTicks; i++) if (TrackerRefreshPolicy.ShouldAcquireActors(true, false, false, false)) TrackerRuntimeMetrics.ActorRead();
@@ -103,6 +111,47 @@ namespace CharacterTracker.Tests
             TestMapShutdown();
             TestMapCacheReuse();
             if (failures == 0) Console.WriteLine("All tests passed."); return failures == 0 ? 0 : 1;
+        }
+
+        private static void TestRegisteredTargetPath()
+        {
+            string directory = Path.Combine(Path.GetTempPath(), "Aether Tracker 日本語 " + Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(directory);
+            string target = Path.Combine(directory, "CharacterTracker.dll");
+            try {
+                File.WriteAllBytes(target, new byte[] { 1, 2, 3 });
+                Equal(Path.GetFullPath(target), UpdateValidation.NormalizeRegisteredPath(target), "registered target preserves spaces and Japanese path");
+                string fileUri = new Uri(target).AbsoluteUri;
+                Equal(Path.GetFullPath(target), UpdateValidation.NormalizeRegisteredPath(fileUri), "registered file URI decoded safely");
+                Throws(() => UpdateValidation.NormalizeRegisteredPath(Path.Combine(directory, "Other.dll")), "wrong target plugin filename rejected");
+            } finally { try { Directory.Delete(directory, true); } catch { } }
+        }
+
+        private static void TestAtomicRollback()
+        {
+            string directory = Path.Combine(Path.GetTempPath(), "Aether Update 日本語 " + Guid.NewGuid().ToString("N")); Directory.CreateDirectory(directory);
+            string target = Path.Combine(directory, "CharacterTracker.dll"), incoming = Path.Combine(directory, "incoming.dll"), backup = Path.Combine(directory, "CharacterTracker.dll.backup");
+            try {
+                File.WriteAllText(target, "old-version"); File.WriteAllText(incoming, "new-version");
+                Throws(() => CharacterTracker.Updater.AtomicPluginReplacement.Replace(incoming, target, backup, () => { throw new InvalidDataException("simulated post-install verification failure"); }), "failed replacement triggers rollback");
+                Equal("old-version", File.ReadAllText(target), "rollback restores original DLL");
+                Equal("old-version", File.ReadAllText(backup), "rollback backup retained");
+            } finally { try { Directory.Delete(directory, true); } catch { } }
+        }
+
+        private static void TestReleasePackage()
+        {
+            string root = Path.GetFullPath(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "..", "..", "..", ".."));
+            string path = Path.Combine(Path.GetTempPath(), "Aether-release-test-" + Guid.NewGuid().ToString("N") + ".zip");
+            SemanticVersion expected; SemanticVersion.TryParse("1.6.3", out expected);
+            try {
+                using (var archive = ZipFile.Open(path, ZipArchiveMode.Create)) foreach (string name in new[] { "CharacterTracker.dll", "CharacterTracker.Updater.exe", "README.md", "UI_COMMON_SPEC.md" }) {
+                    string source = Path.Combine(root, name == "CharacterTracker.dll" || name == "CharacterTracker.Updater.exe" ? "dist" : "", name);
+                    archive.CreateEntryFromFile(source, name, CompressionLevel.Optimal);
+                }
+                UpdateValidation.ValidatePackage(path, expected);
+                True(true, "release package identities and versions validated");
+            } finally { try { File.Delete(path); } catch { } }
         }
 
         private static void TestPackageLimits()

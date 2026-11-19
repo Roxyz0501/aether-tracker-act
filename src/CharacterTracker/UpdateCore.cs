@@ -8,6 +8,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using System.Text.RegularExpressions;
 
 namespace CharacterTracker
 {
@@ -22,11 +23,16 @@ namespace CharacterTracker
             if (string.IsNullOrWhiteSpace(text)) return false;
             string value = text.Trim();
             if (value.StartsWith("v", StringComparison.OrdinalIgnoreCase)) value = value.Substring(1);
-            int plus = value.IndexOf('+'); if (plus >= 0) value = value.Substring(0, plus);
-            string pre = null; int dash = value.IndexOf('-'); if (dash >= 0) { pre = value.Substring(dash + 1); value = value.Substring(0, dash); }
-            string[] parts = value.Split('.'); int major, minor, patch;
-            if (parts.Length != 3 || !int.TryParse(parts[0], out major) || !int.TryParse(parts[1], out minor) || !int.TryParse(parts[2], out patch) || major < 0 || minor < 0 || patch < 0) return false;
-            version = new SemanticVersion { Major = major, Minor = minor, Patch = patch, PreRelease = string.IsNullOrEmpty(pre) ? null : pre };
+            Match match = Regex.Match(value, "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?:-([0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*))?(?:\\+([0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*))?$");
+            if (!match.Success) return false;
+            int major, minor, patch;
+            if (!int.TryParse(match.Groups[1].Value, System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out major) ||
+                !int.TryParse(match.Groups[2].Value, System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out minor) ||
+                !int.TryParse(match.Groups[3].Value, System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out patch)) return false;
+            string pre = match.Groups[4].Success ? match.Groups[4].Value : null;
+            if (pre != null) foreach (string identifier in pre.Split('.'))
+                if (Regex.IsMatch(identifier, "^[0-9]+$") && identifier.Length > 1 && identifier[0] == '0') return false;
+            version = new SemanticVersion { Major = major, Minor = minor, Patch = patch, PreRelease = pre };
             return true;
         }
 
@@ -38,7 +44,17 @@ namespace CharacterTracker
             value = Patch.CompareTo(other.Patch); if (value != 0) return value;
             if (PreRelease == null && other.PreRelease != null) return 1;
             if (PreRelease != null && other.PreRelease == null) return -1;
-            return string.Compare(PreRelease, other.PreRelease, StringComparison.OrdinalIgnoreCase);
+            if (PreRelease == null && other.PreRelease == null) return 0;
+            string[] left = PreRelease.Split('.'), right = other.PreRelease.Split('.');
+            for (int i = 0; i < Math.Min(left.Length, right.Length); i++) {
+                bool leftNumber = Regex.IsMatch(left[i], "^[0-9]+$"), rightNumber = Regex.IsMatch(right[i], "^[0-9]+$");
+                int identifierCompare;
+                if (leftNumber && rightNumber) { identifierCompare = left[i].Length.CompareTo(right[i].Length); if (identifierCompare == 0) identifierCompare = string.CompareOrdinal(left[i], right[i]); }
+                else if (leftNumber != rightNumber) identifierCompare = leftNumber ? -1 : 1;
+                else identifierCompare = string.CompareOrdinal(left[i], right[i]);
+                if (identifierCompare != 0) return identifierCompare;
+            }
+            return left.Length.CompareTo(right.Length);
         }
 
         public override string ToString() { return Major + "." + Minor + "." + Patch + (PreRelease == null ? "" : "-" + PreRelease); }
@@ -153,7 +169,23 @@ namespace CharacterTracker
             if (string.IsNullOrWhiteSpace(name) || Path.IsPathRooted(name)) return false;
             string normalized = name.Replace('\\', '/');
             if (normalized.StartsWith("/", StringComparison.Ordinal) || normalized.Contains("../") || normalized.Contains(":")) return false;
-            return normalized == "CharacterTracker.dll" || normalized == "README.md" || normalized == "UI_COMMON_SPEC.md";
+            return normalized == "CharacterTracker.dll" || normalized == "CharacterTracker.Updater.exe" || normalized == "README.md" || normalized == "UI_COMMON_SPEC.md";
+        }
+
+        public static bool IsApiRateLimit(int statusCode, string remainingHeader)
+        {
+            return statusCode == 429 || statusCode == 403 || string.Equals(remainingHeader, "0", StringComparison.Ordinal);
+        }
+
+        public static string NormalizeRegisteredPath(string value)
+        {
+            if (string.IsNullOrWhiteSpace(value)) throw new InvalidDataException("ACT did not provide a plugin path.");
+            string path = value.Trim(); Uri uri;
+            if (Uri.TryCreate(path, UriKind.Absolute, out uri) && uri.IsFile) path = uri.LocalPath;
+            path = Path.GetFullPath(path);
+            if (!string.Equals(Path.GetFileName(path), "CharacterTracker.dll", StringComparison.OrdinalIgnoreCase)) throw new InvalidDataException("The ACT plugin path is not CharacterTracker.dll.");
+            if (!File.Exists(path)) throw new FileNotFoundException("The installed plugin DLL was not found.", path);
+            return path;
         }
 
         public static void ValidatePackage(string zipPath, SemanticVersion expectedVersion, CancellationToken cancellationToken = default(CancellationToken))
@@ -162,19 +194,24 @@ namespace CharacterTracker
             var zipInfo = new FileInfo(zipPath);
             if (!zipInfo.Exists || zipInfo.Length <= 0 || zipInfo.Length > MaximumReleaseZipBytes)
                 throw new InvalidDataException("The release ZIP is missing or exceeds the allowed size.");
-            bool dll = false;
+            bool dll = false, updater = false, readme = false, commonSpec = false;
+            var names = new System.Collections.Generic.HashSet<string>(StringComparer.Ordinal);
             using (var archive = ZipFile.OpenRead(zipPath)) {
                 if (archive.Entries.Count > MaximumPackageEntries) throw new InvalidDataException("The package contains too many entries.");
                 long expandedBytes = 0;
                 foreach (var entry in archive.Entries) {
                     cancellationToken.ThrowIfCancellationRequested();
                     if (!IsSafeEntry(entry.FullName)) throw new InvalidDataException("Unexpected or unsafe package entry: " + entry.FullName);
+                    if (!names.Add(entry.FullName)) throw new InvalidDataException("Duplicate package entry: " + entry.FullName);
                     if (entry.Length < 0 || entry.Length > MaximumPackageExpandedBytes - expandedBytes)
                         throw new InvalidDataException("The package expands beyond the allowed size.");
                     expandedBytes += entry.Length;
                     if (entry.FullName == "CharacterTracker.dll") dll = true;
+                    if (entry.FullName == "CharacterTracker.Updater.exe") updater = true;
+                    if (entry.FullName == "README.md") readme = true;
+                    if (entry.FullName == "UI_COMMON_SPEC.md") commonSpec = true;
                 }
-                if (!dll) throw new InvalidDataException("The package does not contain the expected plugin DLL.");
+                if (!dll || !updater || !readme || !commonSpec || archive.Entries.Count != 4) throw new InvalidDataException("The package contents do not match the expected plugin release.");
             }
             string temp = Path.Combine(Path.GetTempPath(), "AetherTracker-verify-" + Guid.NewGuid().ToString("N") + ".dll");
             try {
@@ -184,11 +221,23 @@ namespace CharacterTracker
                     CopyBounded(input, output, MaximumPluginDllBytes, cancellationToken);
                 cancellationToken.ThrowIfCancellationRequested();
                 var info = System.Diagnostics.FileVersionInfo.GetVersionInfo(temp);
+                if (System.Reflection.AssemblyName.GetAssemblyName(temp).Name != "CharacterTracker") throw new InvalidDataException("The package does not contain the expected plugin assembly.");
                 SemanticVersion actual;
                 string fileVersion = info.FileVersion;
                 if (fileVersion != null && fileVersion.EndsWith(".0", StringComparison.Ordinal) && fileVersion.Split('.').Length == 4) fileVersion = fileVersion.Substring(0, fileVersion.Length - 2);
-                if (!SemanticVersion.TryParse(fileVersion, out actual) || actual.CompareTo(expectedVersion) != 0 || info.ProductName != "Aether Tracker")
+                if (!SemanticVersion.TryParse(fileVersion, out actual) || actual.CompareTo(expectedVersion) != 0 || info.ProductName != "Aether Tracker" || info.CompanyName != "Roxyz0501")
                     throw new InvalidDataException("Plugin name or version does not match the release.");
+                string helper = Path.Combine(Path.GetTempPath(), "AetherTracker-verify-" + Guid.NewGuid().ToString("N") + ".exe");
+                try {
+                    using (var archive = ZipFile.OpenRead(zipPath))
+                    using (var input = archive.GetEntry("CharacterTracker.Updater.exe").Open())
+                    using (var output = new FileStream(helper, FileMode.CreateNew, FileAccess.Write, FileShare.None)) CopyBounded(input, output, MaximumPluginDllBytes, cancellationToken);
+                    var helperInfo = System.Diagnostics.FileVersionInfo.GetVersionInfo(helper);
+                    if (System.Reflection.AssemblyName.GetAssemblyName(helper).Name != "CharacterTracker.Updater") throw new InvalidDataException("Unexpected helper program identity.");
+                    fileVersion = helperInfo.FileVersion;
+                    if (fileVersion != null && fileVersion.EndsWith(".0", StringComparison.Ordinal) && fileVersion.Split('.').Length == 4) fileVersion = fileVersion.Substring(0, fileVersion.Length - 2);
+                    if (!SemanticVersion.TryParse(fileVersion, out actual) || actual.CompareTo(expectedVersion) != 0 || helperInfo.CompanyName != "Roxyz0501") throw new InvalidDataException("Updater name or version does not match the release.");
+                } finally { try { if (File.Exists(helper)) File.Delete(helper); } catch { } }
             } finally { try { if (File.Exists(temp)) File.Delete(temp); } catch { } }
         }
 

@@ -1,6 +1,8 @@
 using Advanced_Combat_Tracker;
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
+using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -27,6 +29,8 @@ namespace CharacterTracker
         private UpdateService updateService;
         private CancellationTokenSource updateCancellation;
         private UpdateResult availableUpdate;
+        private UpdateResult preparedUpdate;
+        private string registeredPluginPath;
         private readonly object lifecycleGate = new object();
         private readonly HashSet<Task> backgroundTasks = new HashSet<Task>();
         private readonly HashSet<UiDispatchTicket> pendingUiDispatches = new HashSet<UiDispatchTicket>();
@@ -54,6 +58,10 @@ namespace CharacterTracker
             mapImageService = new MapImageService();
             updateService = new UpdateService();
             updateCancellation = new CancellationTokenSource();
+            try {
+                var registration = ActGlobals.oFormActMain.ActPlugins.FirstOrDefault(p => p != null && ReferenceEquals(p.pluginObj, this));
+                if (registration != null && registration.pluginFile != null) registeredPluginPath = UpdateValidation.NormalizeRegisteredPath(registration.pluginFile.FullName);
+            } catch (Exception) { pluginStatus.Text = Localization.T("update.targetUnavailable"); }
             ActGlobals.oFormActMain.OnLogLineRead += OnLogLineRead;
             pollTimer = new System.Windows.Forms.Timer { Interval = Math.Max(100, settings.PollIntervalMs) };
             pollTimer.Tick += (s, e) => Poll(); pollTimer.Start();
@@ -75,7 +83,7 @@ namespace CharacterTracker
         {
             UpdateResult result;
             try { result = await updateService.CheckAsync(updateCancellation.Token).ConfigureAwait(false); }
-            catch (Exception ex) { result = new UpdateResult { State = UpdateState.Failed, Error = ex.GetBaseException().Message }; }
+            catch (Exception ex) { result = new UpdateResult { State = UpdateState.Failed, Error = ex is System.Net.Http.HttpRequestException || ex is TaskCanceledException ? "network" : "package" }; }
             PostToUi(() => {
                 if (control == null || control.IsDisposed) return;
                 availableUpdate = result.State == UpdateState.Available ? result : null;
@@ -89,7 +97,11 @@ namespace CharacterTracker
 
         private void StartInstallUpdate()
         {
-            if (stopping || availableUpdate == null || updateService == null || control == null) return;
+            if (stopping || availableUpdate == null || updateService == null || control == null || preparedUpdate != null) return;
+            if (string.IsNullOrWhiteSpace(registeredPluginPath)) {
+                control.SetUpdateResult(new UpdateResult { State = UpdateState.Failed, Error = "target" });
+                return;
+            }
             UpdateResult update = availableUpdate;
             control.SetUpdateResult(new UpdateResult { State = UpdateState.Downloading, CurrentVersion = update.CurrentVersion, LatestVersion = update.LatestVersion, Notes = update.Notes });
             TrackBackgroundTask(() => InstallUpdateAsync(update));
@@ -98,10 +110,11 @@ namespace CharacterTracker
         private async Task InstallUpdateAsync(UpdateResult update)
         {
             UpdateResult result;
-            try { result = await updateService.PreparePackageAsync(update, updateCancellation.Token).ConfigureAwait(false); }
-            catch (Exception ex) { result = new UpdateResult { State = UpdateState.Failed, Error = ex.GetBaseException().Message }; }
+            try { result = await updateService.PreparePackageAsync(update, registeredPluginPath, updateCancellation.Token).ConfigureAwait(false); }
+            catch (Exception ex) { result = new UpdateResult { State = UpdateState.Failed, Error = ex is System.Net.Http.HttpRequestException || ex is TaskCanceledException ? "network" : "package" }; }
             PostToUi(() => {
                 if (control == null || control.IsDisposed) return;
+                if (result.State == UpdateState.Ready) preparedUpdate = result;
                 control.SetUpdateResult(result);
                 pluginStatus.Text = result.State == UpdateState.Ready ? Localization.T("update.ready") : Localization.F("update.installFailed", result.Error);
             });
@@ -347,9 +360,39 @@ namespace CharacterTracker
             }
             if (updateCancellation != null) { updateCancellation.Dispose(); updateCancellation = null; }
             if (updateService != null) { updateService.Dispose(); updateService = null; }
+            if (settingsSaved && preparedUpdate != null) LaunchPreparedUpdate(preparedUpdate);
             if (pluginStatus != null) pluginStatus.Text = settingsSaved
                 ? Localization.T("plugin.stopped")
                 : Localization.F("settings.saveFailed", settingsSaveError ?? "Unknown error");
+        }
+
+        private static void LaunchPreparedUpdate(UpdateResult update)
+        {
+            try {
+                if (update == null || !File.Exists(update.StagedDllPath) || !File.Exists(update.StagedUpdaterPath) ||
+                    !string.Equals(UpdateValidation.Sha256(update.StagedDllPath), update.StagedDllSha256, StringComparison.OrdinalIgnoreCase) ||
+                    !string.Equals(UpdateValidation.Sha256(update.StagedUpdaterPath), update.StagedUpdaterSha256, StringComparison.OrdinalIgnoreCase))
+                    throw new InvalidDataException("The staged update files failed verification.");
+                int processId; using (var process = Process.GetCurrentProcess()) processId = process.Id;
+                string arguments = "--wait-pid " + processId + " --source " + Quote(update.StagedDllPath) +
+                    " --target " + Quote(update.TargetPath) + " --sha256 " + Quote(update.StagedDllSha256) +
+                    " --updater-sha256 " + Quote(update.StagedUpdaterSha256) + " --version " + Quote(update.LatestVersion) + " --original " + Quote(update.OriginalTargetSha256);
+                Process.Start(new ProcessStartInfo(update.StagedUpdaterPath, arguments) { UseShellExecute = false, CreateNoWindow = true, WindowStyle = ProcessWindowStyle.Hidden });
+            } catch (Exception ex) {
+                string log = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "AetherTracker", "Updater.log");
+                try { Directory.CreateDirectory(Path.GetDirectoryName(log)); File.AppendAllText(log, DateTime.UtcNow.ToString("o") + " FAILED TO START: " + ex + Environment.NewLine); } catch { }
+            }
+        }
+
+        private static string Quote(string value)
+        {
+            string text = value ?? ""; var result = new System.Text.StringBuilder("\""); int slashes = 0;
+            foreach (char c in text) {
+                if (c == '\\') { slashes++; continue; }
+                if (c == '"') { result.Append('\\', slashes * 2 + 1); result.Append('"'); slashes = 0; continue; }
+                result.Append('\\', slashes); slashes = 0; result.Append(c);
+            }
+            result.Append('\\', slashes * 2); result.Append('"'); return result.ToString();
         }
 
         private sealed class UiDispatchTicket

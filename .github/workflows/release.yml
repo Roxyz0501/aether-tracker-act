@@ -37,7 +37,7 @@ jobs:
       - name: Build and test
         shell: powershell
         run: .\build.ps1 -Configuration Release -ActPath "$PWD\ci\ActStub\bin\Release"
-      - name: Create signed assets
+      - name: Create validated assets
         shell: powershell
         run: .\release.ps1 -Version $env:RELEASE_VERSION -SkipBuild
       - name: Publish stable GitHub Release
