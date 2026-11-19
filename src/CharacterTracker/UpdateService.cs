@@ -59,17 +59,17 @@ namespace CharacterTracker
                 if (latest.CompareTo(current) <= 0) return new UpdateResult { State = UpdateState.UpToDate, CurrentVersion = current.ToString(), LatestVersion = latest.ToString() };
                 GitHubRelease release;
                 bool rateLimited = false;
-                try { release = await FetchReleaseByTagAsync(latest.ToString(), cancellationToken).ConfigureAwait(false); }
+                try { release = await FetchReleaseByTagAsync(latestTag, cancellationToken).ConfigureAwait(false); }
                 catch (GitHubRateLimitException) {
                     rateLimited = true;
-                    string baseUrl = "https://github.com/" + UpdateConfiguration.GitHubOwner + "/" + UpdateConfiguration.GitHubRepository + "/releases/download/" + Uri.EscapeDataString(latest.ToString()) + "/";
+                    string baseUrl = "https://github.com/" + UpdateConfiguration.GitHubOwner + "/" + UpdateConfiguration.GitHubRepository + "/releases/download/" + Uri.EscapeDataString(latestTag) + "/";
                     string package = "Aether-Tracker-ACT-v" + latest + ".zip";
                     release = new GitHubRelease { TagName = "v" + latest, Draft = false, Prerelease = false, Body = "", Assets = new System.Collections.Generic.List<GitHubAsset> {
                         new GitHubAsset { Name = package, DownloadUrl = baseUrl + Uri.EscapeDataString(package) },
                         new GitHubAsset { Name = Path.GetFileNameWithoutExtension(package) + ".sha256", DownloadUrl = baseUrl + Uri.EscapeDataString(Path.GetFileNameWithoutExtension(package) + ".sha256") }
                     } };
                 }
-                if (!string.Equals(release.TagName.TrimStart('v', 'V'), latest.ToString(), StringComparison.OrdinalIgnoreCase) || release.Draft || release.Prerelease)
+                if (!string.Equals(release.TagName, latestTag, StringComparison.Ordinal) || release.Draft || release.Prerelease)
                     throw new InvalidDataException("The GitHub release did not match the verified latest stable tag.");
                 return new UpdateResult {
                     State = UpdateState.Available, CurrentVersion = current.ToString(), LatestVersion = latest.ToString(), Notes = Summarize(release.Body), Release = release, ApiRateLimited = rateLimited
@@ -96,7 +96,7 @@ namespace CharacterTracker
                     if (parts.Length < 2 || !string.Equals(parts[parts.Length - 2], "tag", StringComparison.OrdinalIgnoreCase)) throw new InvalidDataException("GitHub did not resolve a stable release tag.");
                     string tag = Uri.UnescapeDataString(parts[parts.Length - 1]); SemanticVersion parsed;
                     if (!SemanticVersion.TryParse(tag, out parsed)) throw new InvalidDataException("The latest stable release tag is not SemVer.");
-                    return parsed.ToString();
+                    return tag;
                 }
             }
             throw new InvalidDataException("Too many latest-release redirects.");
@@ -104,7 +104,7 @@ namespace CharacterTracker
 
         private async Task<GitHubRelease> FetchReleaseByTagAsync(string tag, CancellationToken token)
         {
-            string api = "https://api.github.com/repos/" + UpdateConfiguration.GitHubOwner + "/" + UpdateConfiguration.GitHubRepository + "/releases/tags/" + Uri.EscapeDataString("v" + tag);
+            string api = "https://api.github.com/repos/" + UpdateConfiguration.GitHubOwner + "/" + UpdateConfiguration.GitHubRepository + "/releases/tags/" + Uri.EscapeDataString(tag);
             ValidateGitHubUri(new Uri(api), true);
             using (var response = await client.GetAsync(api, HttpCompletionOption.ResponseHeadersRead, token).ConfigureAwait(false)) {
                 string remaining = response.Headers.Contains("X-RateLimit-Remaining") ? response.Headers.GetValues("X-RateLimit-Remaining").FirstOrDefault() : null;

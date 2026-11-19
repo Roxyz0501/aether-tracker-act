@@ -54,6 +54,7 @@ namespace CharacterTracker.Tests
             Localization.SetLanguage("ja"); Equal("支援", Localization.T("tab.support"), "Japanese support tab");
             True(Localization.F("update.identity", "Roxyz0501", "1.6.3").Contains("Roxyz0501") && Localization.F("update.identity", "Roxyz0501", "1.6.3").Contains("1.6.3"), "localized updater identity");
             True(!string.IsNullOrWhiteSpace(Localization.T("update.rateLimited")) && !string.IsNullOrWhiteSpace(Localization.T("update.networkFailed")), "localized rate-limit and network states");
+            foreach (string code in new[] { "en", "ja", "zh-Hans", "ko" }) { Localization.SetLanguage(code); True(!string.IsNullOrWhiteSpace(Localization.T("update.packageFailed")) && !string.IsNullOrWhiteSpace(Localization.T("update.safety")), "update UI localized: " + code); }
             Equal("English fallback", Localization.T("test.fallback"), "translation fallback");
             Localization.SetLanguage("invalid"); Equal("Support", Localization.T("tab.support"), "invalid language fallback");
             True(Localization.T("tab.support").IndexOf("★", StringComparison.Ordinal) < 0 && Localization.T("tab.support").IndexOf("☆", StringComparison.Ordinal) < 0, "no star in support tab");
